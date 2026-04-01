@@ -27,3 +27,6 @@ jaeminlang.exe source.jml
 ```
 
 ## 코드 작성법
+
+### 출력
+
