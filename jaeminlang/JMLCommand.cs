@@ -122,6 +122,7 @@ namespace jaeminlang
                         return;
                     }
 
+                    // 스트링
                     if (data.StartsWith('\"') && data.EndsWith('\"'))
                     {
                         string str = data.Substring(1, data.Length - 2);
@@ -129,7 +130,7 @@ namespace jaeminlang
                         return;
                     }
 
-                    Variables.SetValue(key, data);
+                    Variables.SetValue(key, Utils.GetIntValue(data));
                 });
                 return;
             }
@@ -138,9 +139,9 @@ namespace jaeminlang
             {
                 action = new Action(() =>
                 {
-                    string rawVal1 = args[1] ?? throw new NullReferenceException("러스트에 인수가 없잖아;;");
-                    string rawVal2 = args[2] ?? throw new NullReferenceException("러스트에 인수가 없잖아;;");
-                    string rawGoTo = args[3] ?? throw new NullReferenceException("러스트에 인수가 없잖아;;");
+                    string rawVal1 = args[1] ?? throw new NullReferenceException("이거 안주는건 너무하지;;");
+                    string rawVal2 = args[2] ?? throw new NullReferenceException("뭐랑 같아야하는진 알아야지;;");
+                    string rawGoTo = args[3] ?? throw new NullReferenceException("어디로 가야하는진 알아야 할 거 아니야;;");
 
                     int val1 = Utils.IsNumber(rawVal1) ? int.Parse(rawVal1) : Utils.GetIntValue(rawVal1);
                     int val2 = Utils.IsNumber(rawVal2) ? int.Parse(rawVal2) : Utils.GetIntValue(rawVal2);
@@ -151,7 +152,8 @@ namespace jaeminlang
                     if (repeat == null)
                         throw new Exception("이건 내실수인데");
 
-                    repeat(goTo);
+                    if (val1 != val2)
+                        repeat(goTo);
                 });
                 return;
             }
