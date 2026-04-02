@@ -7,7 +7,7 @@ class Program
         if (args.Length == 0)
         {
             Stream stderr = Console.OpenStandardError();
-            stderr.Write(Encoding.UTF8.GetBytes("파일명을 제공해주세요!"));
+            stderr.Write(Encoding.UTF8.GetBytes("인수에 파일명을 줘야지;;"));
 
             Environment.Exit(1);
         }
@@ -16,9 +16,11 @@ class Program
         if (!File.Exists(JmlFilePath))
         {
             Stream stderr = Console.OpenStandardError();
-            stderr.Write(Encoding.UTF8.GetBytes("파일이 존재하지 않습니다!"));
+            stderr.Write(Encoding.UTF8.GetBytes("아니;; 파일을 왜 안주냐고;;"));
 
             Environment.Exit(1);
         }
+
+
     }
 }
