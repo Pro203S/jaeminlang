@@ -4,7 +4,7 @@ namespace jaeminlang
 {
     public class JMLCommand
     {
-        public Action action = new Action(() => { Console.WriteLine("action"); });
+        public Action action = new Action(() => { });
         public string rawCmd;
         public string cmdName;
         public string[] args;
@@ -23,7 +23,9 @@ namespace jaeminlang
                     Stream stdout = Console.OpenStandardOutput();
                     
                     if (content.StartsWith("\"") /* string 형식 */) {
-                        stdout.Write(Encoding.UTF8.GetBytes(content.Substring(1).Substring(0, content.Length - 2)));
+                        if (!content.EndsWith("\""))
+                            throw new ArgumentException("string이면 \"로 끝나야지;;");
+                        stdout.Write(Encoding.UTF8.GetBytes(content[1..].Substring(0, content.Length - 2)));
                         return;
                     }
 
@@ -39,7 +41,7 @@ namespace jaeminlang
                         return;
                     }
 
-                    string value = (string)Variables.GetValue(content) ?? throw new NullReferenceException(content + " 변수에 값이 저장이 안되어있잖아;;");
+                    string value = Variables.GetValue(content) as string ?? throw new NullReferenceException(content + " 변수에 값이 저장이 안되어있잖아;;");
                     stdout.Write(Encoding.UTF8.GetBytes(value));
                     stdout.Close();
                 });
@@ -58,11 +60,7 @@ namespace jaeminlang
                 return;
             }
 
-        }
-
-        public void Run()
-        {
-
+            throw new ArgumentException("아니 " + cmdName + "은(는) 안산에도 없는 명령언데;;");
         }
     }
 }

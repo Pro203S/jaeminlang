@@ -4,12 +4,12 @@
     {
         public static Dictionary<string, object?> storage = [];
 
-        public static void SetValue(string key, object value)
+        public static void SetValue(string key, object? value)
         {
             storage[key] = value;
         }
 
-        public static object GetValue(string key)
+        public static object? GetValue(string key)
         {
             return storage[key];
         }

@@ -43,5 +43,14 @@
         {
             return int.TryParse(n, out _);
         }
+
+        public static bool IsExpression(string n)
+        {
+            return n.StartsWith("+") ||
+                n.StartsWith("-") ||
+                n.StartsWith("/") ||
+                n.StartsWith("*") ||
+                n.StartsWith("^");
+        }
     }
 }
