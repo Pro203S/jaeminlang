@@ -24,8 +24,6 @@ namespace jaeminlang
             }
 
             JMLParser parse = new JMLParser(JmlFilePath);
-            parse.Ready();
-
             parse.Run();
 
             Environment.Exit(0);

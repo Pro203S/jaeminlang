@@ -70,26 +70,55 @@ namespace jaeminlang
                     string key = args[1] ?? throw new NullReferenceException("재민에 인수가 없잖아;;");
                     string data = args[2] ?? throw new NullReferenceException("변수에 값은 줘야지;;");
 
-                    if (Utils.IsNumber(data))
+                    // +a 꼴
+                    if (Utils.IsExpression(data))
                     {
-                        Variables.SetValue(key, int.Parse(data));
+                        string exp = data.Substring(0, 1);
+                        string contentKey = data.Substring(1);
+                        object? raw = Variables.GetValue(contentKey) ?? contentKey;
+                        int? valueToCalc = null;
+
+                        if (Utils.IsNumber(contentKey))
+                        {
+                            valueToCalc = int.Parse(contentKey);
+                        }
+                        else
+                        {
+                            valueToCalc = raw switch
+                            {
+                                int i => i,
+                                string s when int.TryParse(s, out var v) => v,
+                                _ => throw new InvalidCastException("아니 숫자가 아니잖아;;")
+                            };
+                        }
+
+                        int origin = Utils.GetIntValue(key);
+                        switch (exp)
+                        {
+                            case "+":
+                                Variables.SetValue(key, origin + valueToCalc);
+                                break;
+                            case "-":
+                                Variables.SetValue(key, origin - valueToCalc);
+                                break;
+                            case "*":
+                                Variables.SetValue(key, origin * valueToCalc);
+                                break;
+                            case "/":
+                                Variables.SetValue(key, origin / valueToCalc);
+                                break;
+                            case "^":
+                                Variables.SetValue(key, origin ^ valueToCalc);
+                                break;
+                            default: throw new ArgumentException("이런 수식은 안산에도 없어;;");
+                        }
                         return;
                     }
 
-                    if (Utils.IsExpression(data))
+                    // 그냥 숫자
+                    if (Utils.IsNumber(data))
                     {
-                        string contentKey = data.Substring(1);
-                        object? raw = Variables.GetValue(contentKey) ?? contentKey;
-
-                        int valueToAdd = raw switch
-                        {
-                            int i => i,
-                            string s when int.TryParse(s, out var v) => v,
-                            _ => throw new InvalidCastException("숫자 아님;;")
-                        };
-
-                        int origin = Utils.GetIntValue(key);
-                        Variables.SetValue(key, origin + valueToAdd);
+                        Variables.SetValue(key, int.Parse(data));
                         return;
                     }
 

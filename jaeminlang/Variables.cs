@@ -11,12 +11,14 @@
 
         public static object? GetValue(string key)
         {
-            return storage[key];
-        }
-
-        public static void RemoveValue(string key)
-        {
-            storage.Remove(key);
+            try
+            {
+                return storage[key];
+            }
+            catch
+            {
+                return null;
+            }
         }
     }
 }
