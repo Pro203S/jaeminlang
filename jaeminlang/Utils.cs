@@ -14,7 +14,18 @@
                 if (isEscaped)
                 {
                     isEscaped = false;
-                    buffer.Add(c);
+                    if (c == 'n')
+                    {
+                        buffer.Add('\n');
+                    }
+                    else if(c == 'r')
+                    {
+                        buffer.Add('\r');
+                    }
+                    else
+                    {
+                        buffer.Add(c);
+                    }
                     continue;
                 }
 
@@ -51,6 +62,36 @@
                 n.StartsWith("/") ||
                 n.StartsWith("*") ||
                 n.StartsWith("^");
+        }
+
+        public static string GetStringValue(string key)
+        {
+            object? raw = Variables.GetValue(key);
+
+            if (raw == null)
+                throw new NullReferenceException(key + " 변수에 값이 저장이 안되어있잖아;;");
+
+            return raw switch
+            {
+                string s => s,
+                int i => i.ToString(),
+                _ => raw.ToString() ?? ""
+            };
+        }
+
+        public static int GetIntValue(string key)
+        {
+            object? raw = Variables.GetValue(key);
+
+            if (raw == null)
+                throw new ArgumentNullException(key + "이(가) 정의가 안됐잖아;;");
+
+            return raw switch
+            {
+                int i => i,
+                string s when int.TryParse(s, out var v) => v,
+                _ => throw new InvalidCastException(key + "은(는) 숫자가 아니잖아;;")
+            };
         }
     }
 }

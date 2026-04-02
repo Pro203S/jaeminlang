@@ -22,7 +22,10 @@ namespace jaeminlang
                 try
                 {
                     string line = fileContent[i];
-                    JMLCommand cmd = new(line);
+                    JMLCommand cmd = new(line, line.StartsWith("러스트") ? new Action<int>((goTo) =>
+                    {
+                        i = goTo;
+                    }) : null);
                     commands.Add(cmd);
                 }
                 catch (Exception e)
