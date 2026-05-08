@@ -5,6 +5,7 @@ namespace jaeminlang
     public class JMLParser
     {
         string _filepath;
+        string[] _fileContent = [];
 
         public JMLParser(string filepath)
         {
@@ -13,20 +14,36 @@ namespace jaeminlang
 
         public void Run()
         {
-            string[] fileContent = File.ReadAllLines(_filepath);
+            _fileContent = File.ReadAllLines(_filepath);
+            RunRange(0, _fileContent.Length);
+        }
 
-            for (int i = 0; i < fileContent.Length; i++)
+        private void RunRange(int startIndex, int endIndex)
+        {
+            for (int i = startIndex; i < endIndex; i++)
             {
                 try
                 {
-                    string line = fileContent[i];
-                    // 주석
+                    string line = _fileContent[i];
                     if (line.StartsWith("어이쿠")) continue;
-                    
-                    JMLCommand cmd = new(line, line.StartsWith("러스트") ? new Action<int>((goTo) =>
-                    {
-                        i = goTo - 1;
-                    }) : null);
+
+                    JMLCommand cmd = new(
+                        line,
+                        new Action<int>((goTo) =>
+                        {
+                            i = goTo - 1;
+                        }),
+                        new Action<string, Function>((name, func) =>
+                        {
+                            Functions.SetValue(name, func);
+                        }),
+                        new Action<string>((name) =>
+                        {
+                            Function func = (Function?)Functions.GetValue(name)
+                                ?? throw new ArgumentNullException(name + " 함수가 정의가 안됐잖아;;");
+
+                            RunRange(func.start - 1, func.end);
+                        }));
                     cmd.action();
                 }
                 catch (Exception e)

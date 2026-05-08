@@ -18,7 +18,7 @@
                     {
                         buffer.Add('\n');
                     }
-                    else if(c == 'r')
+                    else if (c == 'r')
                     {
                         buffer.Add('\r');
                     }
@@ -37,7 +37,7 @@
 
                 if (c == ',')
                 {
-                    result.Add(new string([..buffer]));
+                    result.Add(new string([.. buffer]));
                     buffer.Clear();
                     continue;
                 }
@@ -45,14 +45,16 @@
                 buffer.Add(c);
             }
 
-            result.Add(new string([..buffer]));
+            result.Add(new string([.. buffer]));
 
-            return [..result];
+            return [.. result];
         }
 
-        public static bool IsNumber(string n)
+        public static bool IsNumber(object n)
         {
-            return int.TryParse(n, out _);
+            string? str = Convert.ToString(n);
+            if (str == null) return false;
+            return int.TryParse(str, out _);
         }
 
         public static bool IsExpression(string n)
@@ -92,6 +94,32 @@
                 string s when int.TryParse(s, out var v) => v,
                 _ => throw new InvalidCastException(key + "은(는) 숫자가 아니잖아;;")
             };
+        }
+
+        public static int[] GetIntArray(string key)
+        {
+            object? raw = Variables.GetValue(key) ?? throw new ArgumentNullException(key + "이(가) 정의가 안됐잖아;;");
+
+            if (raw is int[] numbers)
+                return numbers;
+
+            if (raw is not object[] objects)
+                throw new InvalidCastException(key + "은(는) 배열이 아니잖아;;");
+
+            List<int> parsedNumbers = [];
+            foreach (object obj in objects)
+            {
+                string? str = Convert.ToString(obj);
+                if (str == null) continue;
+                if (!IsNumber(str))
+                {
+                    continue;
+                }
+
+                parsedNumbers.Add(int.Parse(str));
+            }
+
+            return [.. parsedNumbers];
         }
     }
 }

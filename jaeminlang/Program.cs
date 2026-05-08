@@ -27,7 +27,7 @@ namespace jaeminlang
                             continue;
                         }
 
-                        JMLCommand cmd = new(line, new Action<int>((_) => { }));
+                        JMLCommand cmd = new(line, null);
 
                         cmd.action();
                         Console.WriteLine();
