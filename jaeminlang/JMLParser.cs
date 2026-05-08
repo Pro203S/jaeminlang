@@ -20,6 +20,9 @@ namespace jaeminlang
                 try
                 {
                     string line = fileContent[i];
+                    // 주석
+                    if (line.StartsWith("어이쿠")) continue;
+                    
                     JMLCommand cmd = new(line, line.StartsWith("러스트") ? new Action<int>((goTo) =>
                     {
                         i = goTo - 1;
