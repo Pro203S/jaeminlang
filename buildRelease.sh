@@ -21,8 +21,14 @@ RIDS=(
     "linux-musl-arm64"
 )
 
+mkdir -p publish
+mkdir -p artifacts
+
 for RID in "${RIDS[@]}"
 do
+    OUTPUT_DIR="./publish/$RID"
+    ZIP_PATH="./artifacts/$RID.zip"
+
     echo "========================================"
     echo "Publishing for $RID"
     echo "========================================"
@@ -32,9 +38,23 @@ do
         -r "$RID" \
         --self-contained true \
         -p:PublishSingleFile=true \
-        -o "./publish/$RID"
+        -o "$OUTPUT_DIR"
 
+    echo "Compressing $RID..."
+
+    rm -f "$ZIP_PATH"
+
+    (
+        cd "$OUTPUT_DIR"
+        zip -r "../../artifacts/$RID.zip" .
+    )
+
+    echo "$RID done!"
     echo ""
 done
 
-echo "Done!"
+echo "========================================"
+echo "All builds completed!"
+echo "Artifacts:"
+echo "./artifacts"
+echo "========================================"
