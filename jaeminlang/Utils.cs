@@ -35,7 +35,7 @@
                     continue;
                 }
 
-                if (c == '$')
+                if (c == ',')
                 {
                     result.Add(new string([..buffer]));
                     buffer.Clear();
