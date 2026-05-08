@@ -8,7 +8,7 @@ namespace jaeminlang
         {
             if (args.Length == 0)
             {
-                Console.WriteLine("jaeminlang\n아래에 재민랭을 입력하세요.\n");
+                Console.WriteLine("jaeminlang by Pro203S (https://github.com/Pro203S/jaeminlang)\n아래에 재민랭을 입력하세요.");
                 for (; ; )
                 {
                     Stream stderr = Console.OpenStandardError();
@@ -24,6 +24,7 @@ namespace jaeminlang
                         if (line.StartsWith("러스트"))
                         {
                             Console.WriteLine("여기서 러스트는 못쓰긴해");
+                            continue;
                         }
 
                         JMLCommand cmd = new(line, new Action<int>((_) => { }));
