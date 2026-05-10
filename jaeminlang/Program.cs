@@ -34,8 +34,6 @@ namespace jaeminlang
                     }
                     catch (Exception e)
                     {
-                        stderr.Write(Encoding.UTF8.GetBytes("아니;; 재민랭 똑바로 못써??\r\n"));
-                        stderr.Write(Encoding.UTF8.GetBytes($"\r\n"));
                         stderr.Write(Encoding.UTF8.GetBytes(e.Message + "\r\n"));
                         stderr.Write(Encoding.UTF8.GetBytes(e.StackTrace + "\r\n"));
                     }
