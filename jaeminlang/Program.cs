@@ -159,7 +159,7 @@ namespace jaeminlang
                         break;
                     default:
                         if (arg.StartsWith('-'))
-                            throw new ArgumentException("모르는 옵션이잖아;; " + arg);
+                            throw new ArgumentException("니 눈엔 " + arg + " 옵션이 있냐?? ");
 
                         if (sourcePath != null)
                             throw new ArgumentException("소스 파일은 하나만 줘야지;;");
