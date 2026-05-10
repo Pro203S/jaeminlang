@@ -29,6 +29,54 @@ Windows의 경우:
 jaeminlang.exe .\source.jml
 ```
 
+## 컴파일
+
+재민랭 소스코드를 OS별 실행 파일로 만들 수 있습니다.
+컴파일 기능은 `JML -> 어셈블리(.s) -> 오브젝트(.o) -> 실행 파일` 순서로 처리합니다.
+기본 컴파일은 실행 파일과 같은 이름의 `.o` 파일도 함께 생성합니다.
+
+```sh
+jaeminlang compile source.jml -o app --rid osx-x64
+jaeminlang compile source.jml -o app --rid osx-arm64
+jaeminlang compile source.jml -o app --rid linux-x64
+jaeminlang compile source.jml -o app --rid linux-arm64
+jaeminlang compile source.jml -o app.exe --rid win-x64
+jaeminlang compile source.jml -o app.exe --rid win-arm64
+```
+
+`--rid`에는 `mac`, `linux`, `windows` 별칭도 사용할 수 있습니다.
+별칭은 현재 CPU 아키텍처를 기준으로 `osx-arm64`, `linux-x64` 같은 RID로 변환됩니다.
+
+오브젝트 파일만 생성하려면 `-c`를 사용합니다.
+
+```sh
+jaeminlang compile source.jml -c -o source.o --rid linux-x64
+```
+
+이미 생성된 오브젝트 파일을 실행 파일로 링크하려면 `link`를 사용합니다.
+오브젝트 파일은 여러 개 넘길 수 있습니다.
+
+```sh
+jaeminlang link source.o -o app --rid linux-x64
+jaeminlang link source.o helper.o -o app --rid osx-arm64
+jaeminlang link source.o -o app.exe --rid win-x64
+```
+
+어셈블리만 생성하려면 `-S` 또는 `--emit-asm`을 사용합니다.
+
+```sh
+jaeminlang compile source.jml -S -o source.s --rid linux-x64
+```
+
+지원 RID 목록은 아래 명령으로 확인할 수 있습니다.
+
+```sh
+jaeminlang compile --list-rids
+```
+
+실행 파일까지 생성하려면 컴파일을 실행하는 환경에 `clang`, `gcc`, `cc` 중 하나가 설치되어 있어야 합니다.
+현재 OS와 다른 OS용 실행 파일을 만들려면 해당 타깃을 링크할 수 있는 크로스 툴체인이 필요합니다.
+
 ## 코드 작성법
 
 ### 주석 (어이쿠)
