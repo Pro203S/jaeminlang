@@ -28,8 +28,7 @@ namespace jaeminlang
                         }
 
                         JMLCommand cmd = new(line, null);
-
-                        cmd.action();
+                        cmd.Execute();
                         Console.WriteLine();
                     }
                     catch (Exception e)
