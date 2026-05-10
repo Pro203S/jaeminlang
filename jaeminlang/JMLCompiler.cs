@@ -36,9 +36,10 @@ namespace jaeminlang
                 throw new ArgumentException("-S랑 -c는 같이 쓸 수 없잖아;;");
 
             string[] sourceLines = File.ReadAllLines(sourcePath);
+            JmlNativeProgram program = JMLNativeParser.Parse(sourceLines);
             INativeAssemblyGenerator generator = target.IsArm64
-                ? new Arm64AssemblyGenerator(target, sourceLines)
-                : new NativeAssemblyGenerator(target, sourceLines);
+                ? new Arm64AssemblyGenerator(target, program)
+                : new NativeAssemblyGenerator(target, program);
             string assembly = generator.Generate();
 
             string? assemblyDirectory = Path.GetDirectoryName(assemblyPath);
@@ -498,22 +499,38 @@ namespace jaeminlang
         private const int ValueSize = 32;
         private const int InputBufferSize = 4096;
         private const long NumberScale = 1_000_000;
-        private const int ReturnSlotCount = 16;
-
         private readonly NativeTarget _target;
+        private readonly JmlNativeProgram _program;
         private readonly string[] _lines;
         private readonly Dictionary<string, string> _variables = [];
         private readonly Dictionary<string, string> _inputBuffers = [];
         private readonly Dictionary<string, string> _stringLiterals = [];
         private readonly Dictionary<int, ArrayStorage> _arrayStorages = [];
+        private readonly Dictionary<string, ArrayStorage> _returnBuffers = [];
         private readonly Dictionary<string, FunctionDefinition> _functions = [];
         private readonly Dictionary<int, int> _functionBlocks = [];
+        private string _currentContext = JMLNativeParser.MainContext;
 
-        public NativeAssemblyGenerator(NativeTarget target, string[] lines)
+        public NativeAssemblyGenerator(NativeTarget target, JmlNativeProgram program)
         {
             _target = target;
-            _lines = lines;
-            CollectFunctionDefinitions();
+            _program = program;
+            _lines = program.Lines;
+
+            foreach (NativeFunctionDefinition function in program.Functions.Values)
+            {
+                _functions[function.Name] = new FunctionDefinition(
+                    function.Name,
+                    function.DeclarationLine,
+                    function.Start,
+                    function.End,
+                    function.Label,
+                    function.Parameters,
+                    function.ReturnCount);
+            }
+
+            foreach (KeyValuePair<int, int> block in program.FunctionBlocks)
+                _functionBlocks[block.Key] = block.Value;
         }
 
         public string Generate()
@@ -526,40 +543,6 @@ namespace jaeminlang
             EmitData(code);
             EmitFooter(code);
             return code.ToString();
-        }
-
-        private void CollectFunctionDefinitions()
-        {
-            int functionIndex = 0;
-
-            for (int i = 0; i < _lines.Length; i++)
-            {
-                if (Utils.ShouldSkipLine(_lines[i]))
-                    continue;
-
-                string[] args = Utils.GetArguments(_lines[i]);
-                if (args.Length < 2 || args[0] != "엘릭서")
-                    continue;
-
-                string name = RequireArg(args, 1, i);
-                if (_functions.ContainsKey(name))
-                    continue;
-
-                int returnIndex = Utils.FindFunctionReturnLine(_lines, i + 1);
-                int declarationLine = i + 1;
-                int start = declarationLine + 1;
-                int end = returnIndex + 1;
-
-                string label = "jml_func_" + functionIndex++;
-                string[] parameters = args.Skip(2).ToArray();
-
-                string[] returnArgs = Utils.GetArguments(_lines[returnIndex]);
-                int returnCount = Math.Max(0, returnArgs.Length - 1);
-
-                _functions[name] = new FunctionDefinition(name, declarationLine, start, end, label, parameters, returnCount);
-                _functionBlocks[declarationLine] = end;
-                i = returnIndex;
-            }
         }
 
         private void EmitHeader(StringBuilder code)
@@ -604,7 +587,7 @@ namespace jaeminlang
             {
                 code.AppendLine(function.Label + ":");
                 EmitFunctionPrologue(code);
-                code.AppendLine($"    jmp {LineLabel(function.Label, function.Start)}");
+                EmitStoreFunctionReturnBufferPointer(code, function.Label);
                 EmitProgramRange(code, function.Start, function.End, function.Label, function.End);
                 code.AppendLine(ReturnLabel(function.Label) + ":");
                 code.AppendLine("    xor eax, eax");
@@ -615,109 +598,121 @@ namespace jaeminlang
 
         private void EmitProgramRange(StringBuilder code, int startLine, int endLine, string context, int jumpLimitLine, int? returnAfterLine = null)
         {
-            for (int lineNumber = startLine; lineNumber <= endLine; lineNumber++)
+            string previousContext = _currentContext;
+            _currentContext = context;
+
+            try
             {
-                code.AppendLine(LineLabel(context, lineNumber) + ":");
-
-                if (context == "main" && _functionBlocks.TryGetValue(lineNumber, out int functionEnd))
+                for (int lineNumber = startLine; lineNumber <= endLine; lineNumber++)
                 {
-                    string nextLabel = functionEnd >= endLine
-                        ? ReturnLabel(context)
-                        : LineLabel(context, functionEnd + 1);
-                    code.AppendLine($"    jmp {nextLabel}");
-                    lineNumber = functionEnd;
-                    continue;
+                    if (ShouldEmitLineLabel(context, lineNumber))
+                        code.AppendLine(LineLabel(context, lineNumber) + ":");
+
+                    if (IsDeadLine(context, lineNumber))
+                        continue;
+
+                    if (context == JMLNativeParser.MainContext && _functionBlocks.TryGetValue(lineNumber, out int functionEnd))
+                    {
+                        lineNumber = functionEnd;
+                        continue;
+                    }
+
+                    EmitLine(code, lineNumber, context, jumpLimitLine);
+
+                    if (returnAfterLine == lineNumber)
+                        code.AppendLine($"    jmp {ReturnLabel(context)}");
                 }
-
-                EmitLine(code, lineNumber, context, jumpLimitLine);
-
-                if (returnAfterLine == lineNumber)
-                    code.AppendLine($"    jmp {ReturnLabel(context)}");
+            }
+            finally
+            {
+                _currentContext = previousContext;
             }
         }
 
         private void EmitLine(StringBuilder code, int lineNumber, string context, int jumpLimitLine)
         {
-            string raw = _lines[lineNumber - 1];
-            if (raw.StartsWith("어이쿠"))
+            if (!_program.Statements.TryGetValue(lineNumber, out JmlStmt? statement))
                 return;
 
-            string[] args = Utils.GetArguments(raw);
-            if (args.Length == 0 || string.IsNullOrEmpty(args[0]))
-                return;
-
-            switch (args[0])
+            switch (statement)
             {
-                case "안산":
-                    EmitPrint(code, args.Skip(1).ToArray(), lineNumber - 1);
+                case PrintStmt print:
+                    EmitPrint(code, print, lineNumber - 1);
                     break;
-                case "재민":
-                    EmitInput(code, RequireArg(args, 1, lineNumber - 1));
+                case InputStmt input:
+                    EmitInput(code, input.Name);
                     break;
-                case "그램":
-                    EmitAssignment(code, args, lineNumber - 1);
+                case AssignStmt assign:
+                    EmitAssignment(code, assign, lineNumber - 1);
                     break;
-                case "러스트":
-                    EmitRepeat(code, args, lineNumber - 1, context, jumpLimitLine);
+                case BranchNotEqualStmt branch:
+                    EmitRepeat(code, branch.Args, lineNumber - 1, context, jumpLimitLine);
                     break;
-                case "엘릭서":
-                    EmitFunctionCommand(code, args, lineNumber, lineNumber - 1);
+                case FunctionStmt function:
+                    EmitFunctionCommand(code, function, lineNumber, lineNumber - 1);
                     break;
-                case "음...":
-                    EmitReturn(code, args, context, lineNumber - 1);
+                case ReturnStmt ret:
+                    EmitReturn(code, ret, context, lineNumber - 1);
                     break;
                 default:
-                    throw new ArgumentException($"{lineNumber}번째 줄에 모르는 명령어가 있잖아;; {args[0]}");
+                    throw new ArgumentException($"{lineNumber}번째 줄에 모르는 명령어가 있잖아;;");
             }
         }
 
-        private void EmitPrint(StringBuilder code, string[] tokens, int lineIndex)
+        private void EmitPrint(StringBuilder code, PrintStmt statement, int lineIndex)
         {
-            if (tokens.Length == 0)
+            if (statement.Values.Count == 0)
                 throw new ArgumentException($"{lineIndex + 1}번째 줄 안산에 인수가 없잖아;;");
 
-            if (LooksLikeFunctionCall(tokens))
+            if (statement.Values.Count == 1 && statement.Values[0] is CallExpr call)
             {
-                FunctionDefinition function = EmitFunctionCall(code, tokens[0], tokens.Skip(1).ToArray(), lineIndex);
+                FunctionDefinition function = GetFunction(call.Name, lineIndex);
+                string returnBuffer = ReturnBufferLabel(lineIndex, Math.Max(1, function.ReturnCount));
+                EmitFunctionCall(code, call.Name, call.Args, lineIndex, returnBuffer);
                 for (int i = 0; i < function.ReturnCount; i++)
-                    EmitPrintValueAddress(code, ReturnSlotLabel(i));
+                    EmitPrintValueAddress(code, returnBuffer, i * ValueSize);
                 return;
             }
 
-            foreach (string token in tokens)
-                EmitPrintToken(code, token);
+            foreach (Expr expr in statement.Values)
+                EmitPrintExpr(code, expr);
         }
 
-        private void EmitPrintToken(StringBuilder code, string token)
+        private void EmitPrintExpr(StringBuilder code, Expr expr)
         {
-            if (IsStringLiteral(token))
+            switch (expr)
             {
-                EmitLoadAddressToArg(code, 0, StringLabel(StringValue(token)));
-                EmitCall(code, "jml_print_string");
-                return;
+                case StringExpr text:
+                    EmitLoadAddressToArg(code, 0, StringLabel(text.Value));
+                    EmitCall(code, "jml_print_string");
+                    return;
+                case NumberExpr number:
+                    EmitMoveToArg(code, 0, number.ScaledValue.ToString());
+                    EmitCall(code, "jml_print_int");
+                    return;
+                case NullExpr:
+                    EmitPrintValueAddress(code, "jml_null_value");
+                    return;
+                case ArrayAccessExpr array:
+                    EmitLoadArrayElementAddress(code, array.Name, array.Indices.ToArray(), "r11");
+                    EmitMoveToArg(code, 0, "r11");
+                    EmitCall(code, "jml_print_value");
+                    return;
+                case VarExpr variable:
+                    EmitPrintValueAddress(code, VariableLabel(variable.Name));
+                    return;
+                case BinaryExpr binary:
+                    EmitNumericExpressionToLabel(code, binary, "jml_tmp_value");
+                    EmitPrintValueAddress(code, "jml_tmp_value");
+                    return;
+                default:
+                    throw new ArgumentException("출력할 수 없는 표현식이잖아;;");
             }
-
-            if (TryParseNumber(token, out long number))
-            {
-                EmitMoveToArg(code, 0, number.ToString());
-                EmitCall(code, "jml_print_int");
-                return;
-            }
-
-            if (TryParseArrayAccess(token, out string arrayName, out int[] arrayIndices))
-            {
-                EmitLoadArrayElementAddress(code, arrayName, arrayIndices, "r11");
-                EmitMoveToArg(code, 0, "r11");
-                EmitCall(code, "jml_print_value");
-                return;
-            }
-
-            EmitPrintValueAddress(code, VariableLabel(token));
         }
 
-        private void EmitPrintValueAddress(StringBuilder code, string label)
+        private void EmitPrintValueAddress(StringBuilder code, string label, int offset = 0)
         {
-            EmitLoadAddressToArg(code, 0, label);
+            EmitLoadAddressToArg(code, 0, label, offset);
             EmitCall(code, "jml_print_value");
         }
 
@@ -728,8 +723,9 @@ namespace jaeminlang
             EmitCall(code, "jml_read_line");
         }
 
-        private void EmitAssignment(StringBuilder code, string[] args, int lineIndex)
+        private void EmitAssignment(StringBuilder code, AssignStmt statement, int lineIndex)
         {
+            string[] args = statement.Args;
             string key = RequireArg(args, 1, lineIndex);
             string[] valueTokens = args.Skip(2).ToArray();
 
@@ -744,17 +740,26 @@ namespace jaeminlang
                 if (valueTokens.Length != 1)
                     throw new ArgumentException($"{lineIndex + 1}번째 줄 배열 값은 하나여야지;;");
 
-                EmitAssignTokenToArrayElement(code, arraySetName, arraySetIndices, valueTokens[0]);
+                if (statement.Values.Count == 1 && statement.Values[0] is BinaryExpr arrayValueExpr)
+                {
+                    EmitAssignExprToLabel(code, arrayValueExpr, "jml_tmp_value");
+                    EmitAssignLabelToArrayElement(code, arraySetName, arraySetIndices, "jml_tmp_value");
+                }
+                else
+                {
+                    EmitAssignTokenToArrayElement(code, arraySetName, arraySetIndices, valueTokens[0]);
+                }
                 return;
             }
 
             if (LooksLikeFunctionCall(valueTokens))
             {
-                FunctionDefinition function = EmitFunctionCall(code, valueTokens[0], valueTokens.Skip(1).ToArray(), lineIndex);
+                CallExpr call = (CallExpr)statement.Values[0];
+                FunctionDefinition function = GetFunction(call.Name, lineIndex);
                 if (function.ReturnCount != 1)
                     throw new ArgumentException("변수에는 값 하나만 넣어야지;;");
 
-                EmitCopyValue(code, VariableLabel(key), ReturnSlotLabel(0));
+                EmitFunctionCall(code, call.Name, call.Args, lineIndex, VariableLabel(key));
                 return;
             }
 
@@ -765,6 +770,12 @@ namespace jaeminlang
             if (Utils.IsExpression(data))
             {
                 EmitExpressionAssignment(code, key, data);
+                return;
+            }
+
+            if (statement.Values.Count == 1 && statement.Values[0] is BinaryExpr binary)
+            {
+                EmitNumericExpressionToLabel(code, binary, VariableLabel(key));
                 return;
             }
 
@@ -793,6 +804,27 @@ namespace jaeminlang
         {
             string op = expression[..1];
             string operand = expression[1..];
+
+            if (TryParseNumber(operand, out long constantOperand))
+            {
+                if ((op is "+" or "-" && constantOperand == 0) ||
+                    (op is "*" or "/" or "^" && constantOperand == NumberScale))
+                {
+                    return;
+                }
+
+                if (op == "*" && constantOperand == 0)
+                {
+                    EmitAssignTokenToLabel(code, "0", VariableLabel(key));
+                    return;
+                }
+
+                if (op == "^" && constantOperand == 0)
+                {
+                    EmitAssignTokenToLabel(code, "1", VariableLabel(key));
+                    return;
+                }
+            }
 
             EmitLoadInt(code, key, "r10");
             code.AppendLine("    mov qword ptr [rip + jml_tmp_0], r10");
@@ -838,75 +870,205 @@ namespace jaeminlang
             EmitCall(code, "jml_set_int");
         }
 
+        private void EmitNumericExpressionToLabel(StringBuilder code, Expr expr, string destinationLabel)
+        {
+            ExpressionPlan plan = ExpressionPlanner.Build(expr, ["r12", "r13", "r14", "r15", "rbx"]);
+            foreach (ExprIrInstr instruction in plan.Instructions)
+            {
+                switch (instruction)
+                {
+                    case LoadExprIrInstr load:
+                        EmitLoadExprToRegister(code, load.Source, plan.Registers[load.Dest]);
+                        break;
+                    case BinaryExprIrInstr binary:
+                        EmitBinaryExprInstruction(code, binary, plan.Registers);
+                        break;
+                }
+            }
+
+            EmitLoadAddressToArg(code, 0, destinationLabel);
+            EmitMoveToArg(code, 1, plan.Registers[plan.Result]);
+            EmitCall(code, "jml_set_int");
+        }
+
+        private void EmitLoadExprToRegister(StringBuilder code, Expr expr, string register)
+        {
+            switch (expr)
+            {
+                case NumberExpr number:
+                    code.AppendLine($"    mov {register}, {number.ScaledValue}");
+                    return;
+                case VarExpr variable:
+                    EmitLoadInt(code, variable.Name, register);
+                    return;
+                case ArrayAccessExpr array:
+                    EmitLoadInt(code, ArrayAccessToken(array), register);
+                    return;
+                default:
+                    throw new ArgumentException("숫자 표현식에 쓸 수 없는 값이잖아;;");
+            }
+        }
+
+        private void EmitBinaryExprInstruction(StringBuilder code, BinaryExprIrInstr instruction, IReadOnlyDictionary<VReg, string> registers)
+        {
+            string destination = registers[instruction.Dest];
+            string left = registers[instruction.Left];
+            string right = registers[instruction.Right];
+
+            if (destination != left)
+                code.AppendLine($"    mov {destination}, {left}");
+
+            switch (instruction.Op)
+            {
+                case "+":
+                    code.AppendLine($"    add {destination}, {right}");
+                    return;
+                case "-":
+                    code.AppendLine($"    sub {destination}, {right}");
+                    return;
+                case "*":
+                    code.AppendLine($"    mov rax, {destination}");
+                    code.AppendLine($"    imul {right}");
+                    code.AppendLine($"    mov r9, {NumberScale}");
+                    code.AppendLine("    idiv r9");
+                    code.AppendLine($"    mov {destination}, rax");
+                    return;
+                case "/":
+                    code.AppendLine($"    mov rax, {destination}");
+                    code.AppendLine($"    imul rax, rax, {NumberScale}");
+                    code.AppendLine("    cqo");
+                    code.AppendLine($"    idiv {right}");
+                    code.AppendLine($"    mov {destination}, rax");
+                    return;
+                case "^":
+                    PreserveExpressionRegistersForCall(code, registers.Values.Distinct(), () =>
+                    {
+                        EmitMoveToArg(code, 0, left);
+                        EmitMoveToArg(code, 1, right);
+                        EmitCall(code, "jml_number_pow");
+                        code.AppendLine("    mov qword ptr [rip + jml_tmp_0], rax");
+                    });
+                    code.AppendLine($"    mov {destination}, qword ptr [rip + jml_tmp_0]");
+                    return;
+                default:
+                    throw new ArgumentException("이런 수식은 안산에도 없어;; " + instruction.Op);
+            }
+        }
+
+        private void PreserveExpressionRegistersForCall(StringBuilder code, IEnumerable<string> registers, Action emitCall)
+        {
+            string[] savedRegisters = registers.Order().ToArray();
+            foreach (string register in savedRegisters)
+                code.AppendLine($"    push {register}");
+
+            emitCall();
+
+            foreach (string register in savedRegisters.Reverse())
+                code.AppendLine($"    pop {register}");
+        }
+
+        private static string ArrayAccessToken(ArrayAccessExpr array)
+        {
+            return array.Name + "." + string.Join(".", array.Indices);
+        }
+
         private void EmitRepeat(StringBuilder code, string[] args, int lineIndex, string context, int jumpLimitLine)
         {
             string rawVal1 = RequireArg(args, 1, lineIndex);
             string rawVal2 = RequireArg(args, 2, lineIndex);
             int goTo = ParseLineNumber(RequireArg(args, 3, lineIndex), lineIndex);
 
+            if (goTo <= 0 || goTo > jumpLimitLine)
+                throw new ArgumentException($"{lineIndex + 1}번째 줄 이동할 줄 번호가 이상하잖아;;");
+
+            if (TryParseNumber(rawVal1, out long constantLeft) && TryParseNumber(rawVal2, out long constantRight))
+            {
+                if (constantLeft != constantRight)
+                    code.AppendLine($"    jmp {LineLabel(context, goTo)}");
+
+                return;
+            }
+
             EmitLoadInt(code, rawVal1, "r10");
             code.AppendLine("    mov qword ptr [rip + jml_tmp_0], r10");
             EmitLoadInt(code, rawVal2, "r11");
             code.AppendLine("    mov r10, qword ptr [rip + jml_tmp_0]");
             code.AppendLine("    cmp r10, r11");
-
-            if (goTo <= 0)
-                throw new ArgumentException($"{lineIndex + 1}번째 줄 이동할 줄 번호가 이상하잖아;;");
-
-            if (goTo > jumpLimitLine)
-                code.AppendLine($"    jne {ReturnLabel(context)}");
-            else
-                code.AppendLine($"    jne {LineLabel(context, goTo)}");
+            code.AppendLine($"    jne {LineLabel(context, goTo)}");
         }
 
-        private void EmitFunctionCommand(StringBuilder code, string[] args, int lineNumber, int lineIndex)
+        private void EmitFunctionCommand(StringBuilder code, FunctionStmt statement, int lineNumber, int lineIndex)
         {
-            string functionName = RequireArg(args, 1, lineIndex);
+            string functionName = statement.Name;
             if (_functions.TryGetValue(functionName, out FunctionDefinition? definition) &&
                 definition.DeclarationLine == lineNumber)
             {
                 return;
             }
 
-            EmitFunctionCall(code, functionName, args.Skip(2).ToArray(), lineIndex);
+            FunctionDefinition function = GetFunction(functionName, lineIndex);
+            string returnBuffer = ReturnBufferLabel(lineIndex, Math.Max(1, function.ReturnCount));
+            EmitFunctionCall(code, functionName, statement.Arguments, lineIndex, returnBuffer);
         }
 
-        private void EmitReturn(StringBuilder code, string[] args, string context, int lineIndex)
+        private void EmitReturn(StringBuilder code, ReturnStmt statement, string context, int lineIndex)
         {
             if (context == "main")
                 throw new InvalidOperationException("여기서 음... 쓰면 어떡해;;");
 
-            string[] tokens = args.Skip(1).ToArray();
-            if (tokens.Length > ReturnSlotCount)
-                throw new ArgumentException("반환값이 너무 많잖아;;");
+            string[] tokens = statement.Args.Skip(1).ToArray();
 
             if (LooksLikeFunctionCall(tokens))
             {
-                FunctionDefinition function = EmitFunctionCall(code, tokens[0], tokens.Skip(1).ToArray(), lineIndex);
-                for (int i = 0; i < function.ReturnCount; i++)
-                    EmitCopyValue(code, ReturnSlotLabel(i), ReturnSlotLabel(i));
+                CallExpr call = (CallExpr)statement.Values[0];
+                EmitFunctionCallToCurrentReturnBuffer(code, call.Name, call.Args, lineIndex, context);
             }
             else
             {
-                for (int i = 0; i < tokens.Length; i++)
-                    EmitAssignTokenToLabel(code, tokens[i], ReturnSlotLabel(i));
+                for (int i = 0; i < statement.Values.Count; i++)
+                {
+                    EmitAssignExprToLabel(code, statement.Values[i], "jml_tmp_value");
+                    EmitCopyValueToCurrentReturnBuffer(code, "jml_tmp_value", i, context);
+                }
             }
 
             code.AppendLine($"    jmp {ReturnLabel(context)}");
         }
 
-        private FunctionDefinition EmitFunctionCall(StringBuilder code, string functionName, string[] rawArgs, int lineIndex)
+        private FunctionDefinition EmitFunctionCall(StringBuilder code, string functionName, IReadOnlyList<Expr> args, int lineIndex, string returnBufferLabel)
+        {
+            FunctionDefinition function = PrepareFunctionCallArguments(code, functionName, args, lineIndex);
+            EmitLoadAddressToArg(code, 0, returnBufferLabel);
+            EmitCall(code, function.Label);
+            return function;
+        }
+
+        private FunctionDefinition EmitFunctionCallToCurrentReturnBuffer(StringBuilder code, string functionName, IReadOnlyList<Expr> args, int lineIndex, string context)
+        {
+            FunctionDefinition function = PrepareFunctionCallArguments(code, functionName, args, lineIndex);
+            code.AppendLine($"    mov {_target.Arg0}, qword ptr [rip + {FunctionReturnBufferPointerLabel(context)}]");
+            EmitCall(code, function.Label);
+            return function;
+        }
+
+        private FunctionDefinition PrepareFunctionCallArguments(StringBuilder code, string functionName, IReadOnlyList<Expr> args, int lineIndex)
+        {
+            FunctionDefinition function = GetFunction(functionName, lineIndex);
+
+            if (function.Parameters.Length != args.Count)
+                throw new ArgumentException(functionName + " 함수 인수 개수가 안맞잖아;;");
+
+            for (int i = 0; i < args.Count; i++)
+                EmitAssignExprToLabel(code, args[i], VariableLabel(function.Label, function.Parameters[i], forceLocal: true));
+
+            return function;
+        }
+
+        private FunctionDefinition GetFunction(string functionName, int lineIndex)
         {
             if (!_functions.TryGetValue(functionName, out FunctionDefinition? function))
                 throw new ArgumentException($"{lineIndex + 1}번째 줄 {functionName} 함수가 정의가 안됐잖아;;");
 
-            if (function.Parameters.Length != rawArgs.Length)
-                throw new ArgumentException(functionName + " 함수 인수 개수가 안맞잖아;;");
-
-            for (int i = 0; i < rawArgs.Length; i++)
-                EmitAssignTokenToLabel(code, rawArgs[i], VariableLabel(function.Parameters[i]));
-
-            EmitCall(code, function.Label);
             return function;
         }
 
@@ -956,6 +1118,11 @@ namespace jaeminlang
                 throw new ArgumentException("배열 접근이 이상하잖아;;");
 
             EmitAssignTokenToLabel(code, token, "jml_tmp_value");
+            EmitAssignLabelToArrayElement(code, arrayName, arrayIndices, "jml_tmp_value");
+        }
+
+        private void EmitAssignLabelToArrayElement(StringBuilder code, string arrayName, int[] arrayIndices, string sourceLabel)
+        {
             EmitLoadAddressToArg(code, 0, VariableLabel(arrayName));
             for (int i = 0; i < arrayIndices.Length - 1; i++)
             {
@@ -965,8 +1132,43 @@ namespace jaeminlang
             }
 
             EmitMoveToArg(code, 1, arrayIndices[^1].ToString());
-            EmitLoadAddressToArg(code, 2, "jml_tmp_value");
+            EmitLoadAddressToArg(code, 2, sourceLabel);
             EmitCall(code, "jml_array_set");
+        }
+
+        private void EmitAssignExprToLabel(StringBuilder code, Expr expr, string destinationLabel)
+        {
+            switch (expr)
+            {
+                case NullExpr:
+                    EmitLoadAddressToArg(code, 0, destinationLabel);
+                    EmitCall(code, "jml_set_null");
+                    return;
+                case StringExpr text:
+                    EmitLoadAddressToArg(code, 0, destinationLabel);
+                    EmitLoadAddressToArg(code, 1, StringLabel(text.Value));
+                    EmitCall(code, "jml_set_string");
+                    return;
+                case NumberExpr number:
+                    EmitLoadAddressToArg(code, 0, destinationLabel);
+                    EmitMoveToArg(code, 1, number.ScaledValue.ToString());
+                    EmitCall(code, "jml_set_int");
+                    return;
+                case VarExpr variable:
+                    EmitCopyValue(code, destinationLabel, VariableLabel(variable.Name));
+                    return;
+                case ArrayAccessExpr array:
+                    EmitLoadArrayElementAddress(code, array.Name, array.Indices.ToArray(), "r11");
+                    EmitLoadAddressToArg(code, 0, destinationLabel);
+                    EmitMoveToArg(code, 1, "r11");
+                    EmitCall(code, "jml_copy_value");
+                    return;
+                case BinaryExpr binary:
+                    EmitNumericExpressionToLabel(code, binary, destinationLabel);
+                    return;
+                default:
+                    throw new ArgumentException("대입할 수 없는 표현식이잖아;;");
+            }
         }
 
         private void EmitAssignTokenToLabel(StringBuilder code, string token, string destinationLabel, int destinationOffset = 0)
@@ -1018,22 +1220,50 @@ namespace jaeminlang
             EmitCall(code, "jml_copy_value");
         }
 
+        private void EmitStoreFunctionReturnBufferPointer(StringBuilder code, string context)
+        {
+            code.AppendLine($"    mov qword ptr [rip + {FunctionReturnBufferPointerLabel(context)}], {_target.Arg0}");
+        }
+
+        private void EmitCopyValueToCurrentReturnBuffer(StringBuilder code, string sourceLabel, int returnIndex, string context)
+        {
+            code.AppendLine($"    mov r10, qword ptr [rip + {FunctionReturnBufferPointerLabel(context)}]");
+            if (returnIndex > 0)
+                code.AppendLine($"    add r10, {returnIndex * ValueSize}");
+            code.AppendLine("    mov qword ptr [rip + jml_addr_tmp], r10");
+            code.AppendLine($"    mov {_target.Arg0}, qword ptr [rip + jml_addr_tmp]");
+            EmitLoadAddressToArg(code, 1, sourceLabel);
+            EmitCall(code, "jml_copy_value");
+        }
+
         private void EmitRuntime(StringBuilder code)
         {
             EmitSetNull(code);
             EmitSetInt(code);
             EmitSetString(code);
             EmitCopyValue(code);
-            EmitSetArray(code);
-            EmitArrayGet(code);
-            EmitArraySet(code);
             EmitValueToInt(code);
-            EmitNumberPow(code);
-            EmitPrintString(code);
-            EmitPrintInt(code);
-            EmitPrintValue(code);
-            EmitPrintArray(code);
-            EmitReadLine(code);
+
+            if (_program.RuntimeFeatures.HasFlag(NativeRuntimeFeatures.Array))
+            {
+                EmitSetArray(code);
+                EmitArrayGet(code);
+                EmitArraySet(code);
+            }
+
+            if (_program.RuntimeFeatures.HasFlag(NativeRuntimeFeatures.Pow))
+                EmitNumberPow(code);
+
+            if (_program.RuntimeFeatures.HasFlag(NativeRuntimeFeatures.Print))
+            {
+                EmitPrintString(code);
+                EmitPrintInt(code);
+                EmitPrintValue(code);
+                EmitPrintArray(code);
+            }
+
+            if (_program.RuntimeFeatures.HasFlag(NativeRuntimeFeatures.Input))
+                EmitReadLine(code);
         }
 
         private void EmitSetNull(StringBuilder code)
@@ -1224,18 +1454,29 @@ namespace jaeminlang
             code.AppendLine("jml_number_pow_loop:");
             code.AppendLine("    test rcx, rcx");
             code.AppendLine("    jz jml_number_pow_done");
+            code.AppendLine("    test rcx, 1");
+            code.AppendLine("    jz jml_number_pow_square");
             code.AppendLine("    imul r10");
             code.AppendLine($"    mov r9, {NumberScale}");
             code.AppendLine("    idiv r9");
-            code.AppendLine("    dec rcx");
+            code.AppendLine("jml_number_pow_square:");
+            code.AppendLine("    mov r9, rax");
+            code.AppendLine("    mov rax, r10");
+            code.AppendLine("    imul r10");
+            code.AppendLine($"    mov r12, {NumberScale}");
+            code.AppendLine("    idiv r12");
+            code.AppendLine("    mov r10, rax");
+            code.AppendLine("    mov rax, r9");
+            code.AppendLine("    sar rcx, 1");
             code.AppendLine("    jmp jml_number_pow_loop");
             code.AppendLine("jml_number_pow_done:");
             code.AppendLine("    test r8, r8");
             code.AppendLine("    jz jml_number_pow_ret");
-            code.AppendLine($"    mov r10, {NumberScale}");
-            code.AppendLine("    imul r10, r10");
+            code.AppendLine("    mov r10, rax");
+            code.AppendLine($"    mov rax, {NumberScale}");
+            code.AppendLine($"    imul rax, rax, {NumberScale}");
             code.AppendLine("    cqo");
-            code.AppendLine("    idiv rax");
+            code.AppendLine("    idiv r10");
             code.AppendLine("jml_number_pow_ret:");
             code.AppendLine("    ret");
             code.AppendLine();
@@ -1454,10 +1695,16 @@ namespace jaeminlang
             code.AppendLine("jml_tmp_value:");
             code.AppendLine("    .quad 0, 0, 0, 0");
 
-            for (int i = 0; i < ReturnSlotCount; i++)
+            foreach (FunctionDefinition function in _functions.Values.OrderBy(function => function.Label))
             {
-                code.AppendLine(ReturnSlotLabel(i) + ":");
-                code.AppendLine("    .quad 0, 0, 0, 0");
+                code.AppendLine(FunctionReturnBufferPointerLabel(function.Label) + ":");
+                code.AppendLine("    .quad 0");
+            }
+
+            foreach (ArrayStorage storage in _returnBuffers.Values.OrderBy(storage => storage.Label))
+            {
+                code.AppendLine(storage.Label + ":");
+                code.AppendLine($"    .space {Math.Max(1, storage.Length) * ValueSize}");
             }
 
             foreach (string label in _variables.Values.Order())
@@ -1483,6 +1730,12 @@ namespace jaeminlang
         {
             code.AppendLine("    push rbp");
             code.AppendLine("    mov rbp, rsp");
+            code.AppendLine("    push rbx");
+            code.AppendLine("    push r12");
+            code.AppendLine("    push r13");
+            code.AppendLine("    push r14");
+            code.AppendLine("    push r15");
+            code.AppendLine("    push rsi");
 
             if (_target.IsWindows)
                 code.AppendLine("    sub rsp, 32");
@@ -1493,6 +1746,12 @@ namespace jaeminlang
             if (_target.IsWindows)
                 code.AppendLine("    add rsp, 32");
 
+            code.AppendLine("    pop rsi");
+            code.AppendLine("    pop r15");
+            code.AppendLine("    pop r14");
+            code.AppendLine("    pop r13");
+            code.AppendLine("    pop r12");
+            code.AppendLine("    pop rbx");
             code.AppendLine("    pop rbp");
             code.AppendLine("    ret");
         }
@@ -1537,9 +1796,10 @@ namespace jaeminlang
             code.AppendLine("    ret");
         }
 
-        private void EmitLoadAddressToArg(StringBuilder code, int argumentIndex, string label)
+        private void EmitLoadAddressToArg(StringBuilder code, int argumentIndex, string label, int offset = 0)
         {
-            code.AppendLine($"    lea {Arg(argumentIndex)}, [rip + {label}]");
+            string suffix = offset == 0 ? "" : " + " + offset;
+            code.AppendLine($"    lea {Arg(argumentIndex)}, [rip + {label}{suffix}]");
         }
 
         private void EmitLoadAddressToRegister(StringBuilder code, string register, string label, int offset = 0)
@@ -1573,21 +1833,37 @@ namespace jaeminlang
 
         private string VariableLabel(string name)
         {
-            if (_variables.TryGetValue(name, out string? label))
+            return VariableLabel(_currentContext, name);
+        }
+
+        private string VariableLabel(string context, string name)
+        {
+            return VariableLabel(context, name, forceLocal: false);
+        }
+
+        private string VariableLabel(string context, string name, bool forceLocal)
+        {
+            string key = context + ":" + name;
+            if (_variables.TryGetValue(key, out string? label))
+                return label;
+
+            string globalKey = JMLNativeParser.MainContext + ":" + name;
+            if (!forceLocal && context != JMLNativeParser.MainContext && _variables.TryGetValue(globalKey, out label))
                 return label;
 
             label = "jml_var_" + _variables.Count;
-            _variables[name] = label;
+            _variables[key] = label;
             return label;
         }
 
         private string InputBufferLabel(string name)
         {
-            if (_inputBuffers.TryGetValue(name, out string? label))
+            string key = _currentContext + ":" + name;
+            if (_inputBuffers.TryGetValue(key, out string? label))
                 return label;
 
             label = "jml_input_" + _inputBuffers.Count;
-            _inputBuffers[name] = label;
+            _inputBuffers[key] = label;
             return label;
         }
 
@@ -1611,19 +1887,40 @@ namespace jaeminlang
             return storage;
         }
 
+        private string ReturnBufferLabel(int lineIndex, int valueCount)
+        {
+            string key = _currentContext + ":" + lineIndex;
+            if (_returnBuffers.TryGetValue(key, out ArrayStorage? storage))
+                return storage.Label;
+
+            storage = new ArrayStorage("jml_call_ret_" + _returnBuffers.Count, Math.Max(1, valueCount));
+            _returnBuffers[key] = storage;
+            return storage.Label;
+        }
+
+        private static string FunctionReturnBufferPointerLabel(string context)
+        {
+            return context + "_return_buffer";
+        }
+
         private static string LineLabel(string context, int lineNumber)
         {
             return $"L_{context}_line_{lineNumber}";
         }
 
+        private bool ShouldEmitLineLabel(string context, int lineNumber)
+        {
+            return _program.LabelLines.TryGetValue(context, out HashSet<int>? lines) && lines.Contains(lineNumber);
+        }
+
+        private bool IsDeadLine(string context, int lineNumber)
+        {
+            return _program.DeadLines.TryGetValue(context, out HashSet<int>? lines) && lines.Contains(lineNumber);
+        }
+
         private static string ReturnLabel(string context)
         {
             return $"L_{context}_return";
-        }
-
-        private static string ReturnSlotLabel(int index)
-        {
-            return "jml_return_" + index;
         }
 
         private bool LooksLikeFunctionCall(string[] tokens)
@@ -1734,22 +2031,38 @@ namespace jaeminlang
         private const int ValueSize = 32;
         private const int InputBufferSize = 4096;
         private const long NumberScale = 1_000_000;
-        private const int ReturnSlotCount = 16;
-
         private readonly NativeTarget _target;
+        private readonly JmlNativeProgram _program;
         private readonly string[] _lines;
         private readonly Dictionary<string, string> _variables = [];
         private readonly Dictionary<string, string> _inputBuffers = [];
         private readonly Dictionary<string, string> _stringLiterals = [];
         private readonly Dictionary<int, ArrayStorage> _arrayStorages = [];
+        private readonly Dictionary<string, ArrayStorage> _returnBuffers = [];
         private readonly Dictionary<string, FunctionDefinition> _functions = [];
         private readonly Dictionary<int, int> _functionBlocks = [];
+        private string _currentContext = JMLNativeParser.MainContext;
 
-        public Arm64AssemblyGenerator(NativeTarget target, string[] lines)
+        public Arm64AssemblyGenerator(NativeTarget target, JmlNativeProgram program)
         {
             _target = target;
-            _lines = lines;
-            CollectFunctionDefinitions();
+            _program = program;
+            _lines = program.Lines;
+
+            foreach (NativeFunctionDefinition function in program.Functions.Values)
+            {
+                _functions[function.Name] = new FunctionDefinition(
+                    function.Name,
+                    function.DeclarationLine,
+                    function.Start,
+                    function.End,
+                    function.Label,
+                    function.Parameters,
+                    function.ReturnCount);
+            }
+
+            foreach (KeyValuePair<int, int> block in program.FunctionBlocks)
+                _functionBlocks[block.Key] = block.Value;
         }
 
         public string Generate()
@@ -1762,39 +2075,6 @@ namespace jaeminlang
             EmitData(code);
             EmitFooter(code);
             return code.ToString();
-        }
-
-        private void CollectFunctionDefinitions()
-        {
-            int functionIndex = 0;
-
-            for (int i = 0; i < _lines.Length; i++)
-            {
-                if (Utils.ShouldSkipLine(_lines[i]))
-                    continue;
-
-                string[] args = Utils.GetArguments(_lines[i]);
-                if (args.Length < 2 || args[0] != "엘릭서")
-                    continue;
-
-                string name = RequireArg(args, 1, i);
-                if (_functions.ContainsKey(name))
-                    continue;
-
-                int returnIndex = Utils.FindFunctionReturnLine(_lines, i + 1);
-                int declarationLine = i + 1;
-                int start = declarationLine + 1;
-                int end = returnIndex + 1;
-
-                string label = "jml_func_" + functionIndex++;
-                string[] parameters = args.Skip(2).ToArray();
-                string[] returnArgs = Utils.GetArguments(_lines[returnIndex]);
-                int returnCount = Math.Max(0, returnArgs.Length - 1);
-
-                _functions[name] = new FunctionDefinition(name, declarationLine, start, end, label, parameters, returnCount);
-                _functionBlocks[declarationLine] = end;
-                i = returnIndex;
-            }
         }
 
         private void EmitHeader(StringBuilder code)
@@ -1837,7 +2117,7 @@ namespace jaeminlang
             {
                 code.AppendLine(function.Label + ":");
                 EmitFunctionPrologue(code);
-                code.AppendLine($"    b {LineLabel(function.Label, function.Start)}");
+                EmitStoreFunctionReturnBufferPointer(code, function.Label);
                 EmitProgramRange(code, function.Start, function.End, function.Label, function.End);
                 code.AppendLine(ReturnLabel(function.Label) + ":");
                 code.AppendLine("    mov w0, #0");
@@ -1848,109 +2128,121 @@ namespace jaeminlang
 
         private void EmitProgramRange(StringBuilder code, int startLine, int endLine, string context, int jumpLimitLine, int? returnAfterLine = null)
         {
-            for (int lineNumber = startLine; lineNumber <= endLine; lineNumber++)
+            string previousContext = _currentContext;
+            _currentContext = context;
+
+            try
             {
-                code.AppendLine(LineLabel(context, lineNumber) + ":");
-
-                if (context == "main" && _functionBlocks.TryGetValue(lineNumber, out int functionEnd))
+                for (int lineNumber = startLine; lineNumber <= endLine; lineNumber++)
                 {
-                    string nextLabel = functionEnd >= endLine
-                        ? ReturnLabel(context)
-                        : LineLabel(context, functionEnd + 1);
-                    code.AppendLine($"    b {nextLabel}");
-                    lineNumber = functionEnd;
-                    continue;
+                    if (ShouldEmitLineLabel(context, lineNumber))
+                        code.AppendLine(LineLabel(context, lineNumber) + ":");
+
+                    if (IsDeadLine(context, lineNumber))
+                        continue;
+
+                    if (context == JMLNativeParser.MainContext && _functionBlocks.TryGetValue(lineNumber, out int functionEnd))
+                    {
+                        lineNumber = functionEnd;
+                        continue;
+                    }
+
+                    EmitLine(code, lineNumber, context, jumpLimitLine);
+
+                    if (returnAfterLine == lineNumber)
+                        code.AppendLine($"    b {ReturnLabel(context)}");
                 }
-
-                EmitLine(code, lineNumber, context, jumpLimitLine);
-
-                if (returnAfterLine == lineNumber)
-                    code.AppendLine($"    b {ReturnLabel(context)}");
+            }
+            finally
+            {
+                _currentContext = previousContext;
             }
         }
 
         private void EmitLine(StringBuilder code, int lineNumber, string context, int jumpLimitLine)
         {
-            string raw = _lines[lineNumber - 1];
-            if (raw.StartsWith("어이쿠"))
+            if (!_program.Statements.TryGetValue(lineNumber, out JmlStmt? statement))
                 return;
 
-            string[] args = Utils.GetArguments(raw);
-            if (args.Length == 0 || string.IsNullOrEmpty(args[0]))
-                return;
-
-            switch (args[0])
+            switch (statement)
             {
-                case "안산":
-                    EmitPrint(code, args.Skip(1).ToArray(), lineNumber - 1);
+                case PrintStmt print:
+                    EmitPrint(code, print, lineNumber - 1);
                     break;
-                case "재민":
-                    EmitInput(code, RequireArg(args, 1, lineNumber - 1));
+                case InputStmt input:
+                    EmitInput(code, input.Name);
                     break;
-                case "그램":
-                    EmitAssignment(code, args, lineNumber - 1);
+                case AssignStmt assign:
+                    EmitAssignment(code, assign, lineNumber - 1);
                     break;
-                case "러스트":
-                    EmitRepeat(code, args, lineNumber - 1, context, jumpLimitLine);
+                case BranchNotEqualStmt branch:
+                    EmitRepeat(code, branch.Args, lineNumber - 1, context, jumpLimitLine);
                     break;
-                case "엘릭서":
-                    EmitFunctionCommand(code, args, lineNumber, lineNumber - 1);
+                case FunctionStmt function:
+                    EmitFunctionCommand(code, function, lineNumber, lineNumber - 1);
                     break;
-                case "음...":
-                    EmitReturn(code, args, context, lineNumber - 1);
+                case ReturnStmt ret:
+                    EmitReturn(code, ret, context, lineNumber - 1);
                     break;
                 default:
-                    throw new ArgumentException($"{lineNumber}번째 줄에 모르는 명령어가 있잖아;; {args[0]}");
+                    throw new ArgumentException($"{lineNumber}번째 줄에 모르는 명령어가 있잖아;;");
             }
         }
 
-        private void EmitPrint(StringBuilder code, string[] tokens, int lineIndex)
+        private void EmitPrint(StringBuilder code, PrintStmt statement, int lineIndex)
         {
-            if (tokens.Length == 0)
+            if (statement.Values.Count == 0)
                 throw new ArgumentException($"{lineIndex + 1}번째 줄 안산에 인수가 없잖아;;");
 
-            if (LooksLikeFunctionCall(tokens))
+            if (statement.Values.Count == 1 && statement.Values[0] is CallExpr call)
             {
-                FunctionDefinition function = EmitFunctionCall(code, tokens[0], tokens.Skip(1).ToArray(), lineIndex);
+                FunctionDefinition function = GetFunction(call.Name, lineIndex);
+                string returnBuffer = ReturnBufferLabel(lineIndex, Math.Max(1, function.ReturnCount));
+                EmitFunctionCall(code, call.Name, call.Args, lineIndex, returnBuffer);
                 for (int i = 0; i < function.ReturnCount; i++)
-                    EmitPrintValueAddress(code, ReturnSlotLabel(i));
+                    EmitPrintValueAddress(code, returnBuffer, i * ValueSize);
                 return;
             }
 
-            foreach (string token in tokens)
-                EmitPrintToken(code, token);
+            foreach (Expr expr in statement.Values)
+                EmitPrintExpr(code, expr);
         }
 
-        private void EmitPrintToken(StringBuilder code, string token)
+        private void EmitPrintExpr(StringBuilder code, Expr expr)
         {
-            if (IsStringLiteral(token))
+            switch (expr)
             {
-                EmitLoadAddress(code, "x0", StringLabel(StringValue(token)));
-                EmitCall(code, "jml_print_string");
-                return;
+                case StringExpr text:
+                    EmitLoadAddress(code, "x0", StringLabel(text.Value));
+                    EmitCall(code, "jml_print_string");
+                    return;
+                case NumberExpr number:
+                    EmitLoadImmediate(code, "x0", number.ScaledValue);
+                    EmitCall(code, "jml_print_int");
+                    return;
+                case NullExpr:
+                    EmitPrintValueAddress(code, "jml_null_value");
+                    return;
+                case ArrayAccessExpr array:
+                    EmitLoadArrayElementAddress(code, array.Name, array.Indices.ToArray(), "x11");
+                    EmitMove(code, "x0", "x11");
+                    EmitCall(code, "jml_print_value");
+                    return;
+                case VarExpr variable:
+                    EmitPrintValueAddress(code, VariableLabel(variable.Name));
+                    return;
+                case BinaryExpr binary:
+                    EmitNumericExpressionToLabel(code, binary, "jml_tmp_value");
+                    EmitPrintValueAddress(code, "jml_tmp_value");
+                    return;
+                default:
+                    throw new ArgumentException("출력할 수 없는 표현식이잖아;;");
             }
-
-            if (TryParseNumber(token, out long number))
-            {
-                EmitLoadImmediate(code, "x0", number);
-                EmitCall(code, "jml_print_int");
-                return;
-            }
-
-            if (TryParseArrayAccess(token, out string arrayName, out int[] arrayIndices))
-            {
-                EmitLoadArrayElementAddress(code, arrayName, arrayIndices, "x11");
-                EmitMove(code, "x0", "x11");
-                EmitCall(code, "jml_print_value");
-                return;
-            }
-
-            EmitPrintValueAddress(code, VariableLabel(token));
         }
 
-        private void EmitPrintValueAddress(StringBuilder code, string label)
+        private void EmitPrintValueAddress(StringBuilder code, string label, int offset = 0)
         {
-            EmitLoadAddress(code, "x0", label);
+            EmitLoadAddress(code, "x0", label, offset);
             EmitCall(code, "jml_print_value");
         }
 
@@ -1961,8 +2253,9 @@ namespace jaeminlang
             EmitCall(code, "jml_read_line");
         }
 
-        private void EmitAssignment(StringBuilder code, string[] args, int lineIndex)
+        private void EmitAssignment(StringBuilder code, AssignStmt statement, int lineIndex)
         {
+            string[] args = statement.Args;
             string key = RequireArg(args, 1, lineIndex);
             string[] valueTokens = args.Skip(2).ToArray();
 
@@ -1977,17 +2270,26 @@ namespace jaeminlang
                 if (valueTokens.Length != 1)
                     throw new ArgumentException($"{lineIndex + 1}번째 줄 배열 값은 하나여야지;;");
 
-                EmitAssignTokenToArrayElement(code, arraySetName, arraySetIndices, valueTokens[0]);
+                if (statement.Values.Count == 1 && statement.Values[0] is BinaryExpr arrayValueExpr)
+                {
+                    EmitAssignExprToLabel(code, arrayValueExpr, "jml_tmp_value");
+                    EmitAssignLabelToArrayElement(code, arraySetName, arraySetIndices, "jml_tmp_value");
+                }
+                else
+                {
+                    EmitAssignTokenToArrayElement(code, arraySetName, arraySetIndices, valueTokens[0]);
+                }
                 return;
             }
 
             if (LooksLikeFunctionCall(valueTokens))
             {
-                FunctionDefinition function = EmitFunctionCall(code, valueTokens[0], valueTokens.Skip(1).ToArray(), lineIndex);
+                CallExpr call = (CallExpr)statement.Values[0];
+                FunctionDefinition function = GetFunction(call.Name, lineIndex);
                 if (function.ReturnCount != 1)
                     throw new ArgumentException("변수에는 값 하나만 넣어야지;;");
 
-                EmitCopyValue(code, VariableLabel(key), ReturnSlotLabel(0));
+                EmitFunctionCall(code, call.Name, call.Args, lineIndex, VariableLabel(key));
                 return;
             }
 
@@ -1998,6 +2300,12 @@ namespace jaeminlang
             if (Utils.IsExpression(data))
             {
                 EmitExpressionAssignment(code, key, data);
+                return;
+            }
+
+            if (statement.Values.Count == 1 && statement.Values[0] is BinaryExpr binary)
+            {
+                EmitNumericExpressionToLabel(code, binary, VariableLabel(key));
                 return;
             }
 
@@ -2026,6 +2334,27 @@ namespace jaeminlang
         {
             string op = expression[..1];
             string operand = expression[1..];
+
+            if (TryParseNumber(operand, out long constantOperand))
+            {
+                if ((op is "+" or "-" && constantOperand == 0) ||
+                    (op is "*" or "/" or "^" && constantOperand == NumberScale))
+                {
+                    return;
+                }
+
+                if (op == "*" && constantOperand == 0)
+                {
+                    EmitAssignTokenToLabel(code, "0", VariableLabel(key));
+                    return;
+                }
+
+                if (op == "^" && constantOperand == 0)
+                {
+                    EmitAssignTokenToLabel(code, "1", VariableLabel(key));
+                    return;
+                }
+            }
 
             EmitLoadInt(code, key, "x10");
             EmitStoreGlobal(code, "x10", "jml_tmp_0");
@@ -2065,73 +2394,201 @@ namespace jaeminlang
             EmitCall(code, "jml_set_int");
         }
 
+        private void EmitNumericExpressionToLabel(StringBuilder code, Expr expr, string destinationLabel)
+        {
+            ExpressionPlan plan = ExpressionPlanner.Build(expr, ["x19", "x20", "x21", "x22", "x23", "x24", "x25"]);
+            foreach (ExprIrInstr instruction in plan.Instructions)
+            {
+                switch (instruction)
+                {
+                    case LoadExprIrInstr load:
+                        EmitLoadExprToRegister(code, load.Source, plan.Registers[load.Dest]);
+                        break;
+                    case BinaryExprIrInstr binary:
+                        EmitBinaryExprInstruction(code, binary, plan.Registers);
+                        break;
+                }
+            }
+
+            EmitLoadAddress(code, "x0", destinationLabel);
+            EmitMove(code, "x1", plan.Registers[plan.Result]);
+            EmitCall(code, "jml_set_int");
+        }
+
+        private void EmitLoadExprToRegister(StringBuilder code, Expr expr, string register)
+        {
+            switch (expr)
+            {
+                case NumberExpr number:
+                    EmitLoadImmediate(code, register, number.ScaledValue);
+                    return;
+                case VarExpr variable:
+                    EmitLoadInt(code, variable.Name, register);
+                    return;
+                case ArrayAccessExpr array:
+                    EmitLoadInt(code, ArrayAccessToken(array), register);
+                    return;
+                default:
+                    throw new ArgumentException("숫자 표현식에 쓸 수 없는 값이잖아;;");
+            }
+        }
+
+        private void EmitBinaryExprInstruction(StringBuilder code, BinaryExprIrInstr instruction, IReadOnlyDictionary<VReg, string> registers)
+        {
+            string destination = registers[instruction.Dest];
+            string left = registers[instruction.Left];
+            string right = registers[instruction.Right];
+
+            if (destination != left)
+                EmitMove(code, destination, left);
+
+            switch (instruction.Op)
+            {
+                case "+":
+                    code.AppendLine($"    add {destination}, {destination}, {right}");
+                    return;
+                case "-":
+                    code.AppendLine($"    sub {destination}, {destination}, {right}");
+                    return;
+                case "*":
+                    code.AppendLine($"    mul {destination}, {destination}, {right}");
+                    EmitLoadImmediate(code, "x16", NumberScale);
+                    code.AppendLine($"    sdiv {destination}, {destination}, x16");
+                    return;
+                case "/":
+                    EmitLoadImmediate(code, "x16", NumberScale);
+                    code.AppendLine($"    mul {destination}, {destination}, x16");
+                    code.AppendLine($"    sdiv {destination}, {destination}, {right}");
+                    return;
+                case "^":
+                    PreserveExpressionRegistersForCall(code, registers.Values.Distinct(), () =>
+                    {
+                        EmitMove(code, "x0", left);
+                        EmitMove(code, "x1", right);
+                        EmitCall(code, "jml_number_pow");
+                        EmitStoreGlobal(code, "x0", "jml_tmp_0");
+                    });
+                    EmitLoadGlobal(code, destination, "jml_tmp_0");
+                    return;
+                default:
+                    throw new ArgumentException("이런 수식은 안산에도 없어;; " + instruction.Op);
+            }
+        }
+
+        private void PreserveExpressionRegistersForCall(StringBuilder code, IEnumerable<string> registers, Action emitCall)
+        {
+            string[] savedRegisters = registers.Order().ToArray();
+            foreach (string register in savedRegisters)
+                code.AppendLine($"    str {register}, [sp, #-16]!");
+
+            emitCall();
+
+            foreach (string register in savedRegisters.Reverse())
+                code.AppendLine($"    ldr {register}, [sp], #16");
+        }
+
+        private static string ArrayAccessToken(ArrayAccessExpr array)
+        {
+            return array.Name + "." + string.Join(".", array.Indices);
+        }
+
         private void EmitRepeat(StringBuilder code, string[] args, int lineIndex, string context, int jumpLimitLine)
         {
             string rawVal1 = RequireArg(args, 1, lineIndex);
             string rawVal2 = RequireArg(args, 2, lineIndex);
             int goTo = ParseLineNumber(RequireArg(args, 3, lineIndex), lineIndex);
 
+            if (goTo <= 0 || goTo > jumpLimitLine)
+                throw new ArgumentException($"{lineIndex + 1}번째 줄 이동할 줄 번호가 이상하잖아;;");
+
+            if (TryParseNumber(rawVal1, out long constantLeft) && TryParseNumber(rawVal2, out long constantRight))
+            {
+                if (constantLeft != constantRight)
+                    code.AppendLine($"    b {LineLabel(context, goTo)}");
+
+                return;
+            }
+
             EmitLoadInt(code, rawVal1, "x10");
             EmitStoreGlobal(code, "x10", "jml_tmp_0");
             EmitLoadInt(code, rawVal2, "x11");
             EmitLoadGlobal(code, "x10", "jml_tmp_0");
             code.AppendLine("    cmp x10, x11");
-
-            if (goTo <= 0)
-                throw new ArgumentException($"{lineIndex + 1}번째 줄 이동할 줄 번호가 이상하잖아;;");
-
-            if (goTo > jumpLimitLine)
-                code.AppendLine($"    b.ne {ReturnLabel(context)}");
-            else
-                code.AppendLine($"    b.ne {LineLabel(context, goTo)}");
+            code.AppendLine($"    b.ne {LineLabel(context, goTo)}");
         }
 
-        private void EmitFunctionCommand(StringBuilder code, string[] args, int lineNumber, int lineIndex)
+        private void EmitFunctionCommand(StringBuilder code, FunctionStmt statement, int lineNumber, int lineIndex)
         {
-            string functionName = RequireArg(args, 1, lineIndex);
+            string functionName = statement.Name;
             if (_functions.TryGetValue(functionName, out FunctionDefinition? definition) &&
                 definition.DeclarationLine == lineNumber)
             {
                 return;
             }
 
-            EmitFunctionCall(code, functionName, args.Skip(2).ToArray(), lineIndex);
+            FunctionDefinition function = GetFunction(functionName, lineIndex);
+            string returnBuffer = ReturnBufferLabel(lineIndex, Math.Max(1, function.ReturnCount));
+            EmitFunctionCall(code, functionName, statement.Arguments, lineIndex, returnBuffer);
         }
 
-        private void EmitReturn(StringBuilder code, string[] args, string context, int lineIndex)
+        private void EmitReturn(StringBuilder code, ReturnStmt statement, string context, int lineIndex)
         {
             if (context == "main")
                 throw new InvalidOperationException("여기서 음... 쓰면 어떡해;;");
 
-            string[] tokens = args.Skip(1).ToArray();
-            if (tokens.Length > ReturnSlotCount)
-                throw new ArgumentException("반환값이 너무 많잖아;;");
+            string[] tokens = statement.Args.Skip(1).ToArray();
 
             if (LooksLikeFunctionCall(tokens))
             {
-                EmitFunctionCall(code, tokens[0], tokens.Skip(1).ToArray(), lineIndex);
+                CallExpr call = (CallExpr)statement.Values[0];
+                EmitFunctionCallToCurrentReturnBuffer(code, call.Name, call.Args, lineIndex, context);
             }
             else
             {
-                for (int i = 0; i < tokens.Length; i++)
-                    EmitAssignTokenToLabel(code, tokens[i], ReturnSlotLabel(i));
+                for (int i = 0; i < statement.Values.Count; i++)
+                {
+                    EmitAssignExprToLabel(code, statement.Values[i], "jml_tmp_value");
+                    EmitCopyValueToCurrentReturnBuffer(code, "jml_tmp_value", i, context);
+                }
             }
 
             code.AppendLine($"    b {ReturnLabel(context)}");
         }
 
-        private FunctionDefinition EmitFunctionCall(StringBuilder code, string functionName, string[] rawArgs, int lineIndex)
+        private FunctionDefinition EmitFunctionCall(StringBuilder code, string functionName, IReadOnlyList<Expr> args, int lineIndex, string returnBufferLabel)
+        {
+            FunctionDefinition function = PrepareFunctionCallArguments(code, functionName, args, lineIndex);
+            EmitLoadAddress(code, "x0", returnBufferLabel);
+            EmitCall(code, function.Label);
+            return function;
+        }
+
+        private FunctionDefinition EmitFunctionCallToCurrentReturnBuffer(StringBuilder code, string functionName, IReadOnlyList<Expr> args, int lineIndex, string context)
+        {
+            FunctionDefinition function = PrepareFunctionCallArguments(code, functionName, args, lineIndex);
+            EmitLoadGlobal(code, "x0", FunctionReturnBufferPointerLabel(context));
+            EmitCall(code, function.Label);
+            return function;
+        }
+
+        private FunctionDefinition PrepareFunctionCallArguments(StringBuilder code, string functionName, IReadOnlyList<Expr> args, int lineIndex)
+        {
+            FunctionDefinition function = GetFunction(functionName, lineIndex);
+
+            if (function.Parameters.Length != args.Count)
+                throw new ArgumentException(functionName + " 함수 인수 개수가 안맞잖아;;");
+
+            for (int i = 0; i < args.Count; i++)
+                EmitAssignExprToLabel(code, args[i], VariableLabel(function.Label, function.Parameters[i], forceLocal: true));
+
+            return function;
+        }
+
+        private FunctionDefinition GetFunction(string functionName, int lineIndex)
         {
             if (!_functions.TryGetValue(functionName, out FunctionDefinition? function))
                 throw new ArgumentException($"{lineIndex + 1}번째 줄 {functionName} 함수가 정의가 안됐잖아;;");
 
-            if (function.Parameters.Length != rawArgs.Length)
-                throw new ArgumentException(functionName + " 함수 인수 개수가 안맞잖아;;");
-
-            for (int i = 0; i < rawArgs.Length; i++)
-                EmitAssignTokenToLabel(code, rawArgs[i], VariableLabel(function.Parameters[i]));
-
-            EmitCall(code, function.Label);
             return function;
         }
 
@@ -2180,6 +2637,11 @@ namespace jaeminlang
                 throw new ArgumentException("배열 접근이 이상하잖아;;");
 
             EmitAssignTokenToLabel(code, token, "jml_tmp_value");
+            EmitAssignLabelToArrayElement(code, arrayName, arrayIndices, "jml_tmp_value");
+        }
+
+        private void EmitAssignLabelToArrayElement(StringBuilder code, string arrayName, int[] arrayIndices, string sourceLabel)
+        {
             EmitLoadAddress(code, "x0", VariableLabel(arrayName));
             for (int i = 0; i < arrayIndices.Length - 1; i++)
             {
@@ -2188,8 +2650,43 @@ namespace jaeminlang
             }
 
             EmitLoadImmediate(code, "x1", arrayIndices[^1]);
-            EmitLoadAddress(code, "x2", "jml_tmp_value");
+            EmitLoadAddress(code, "x2", sourceLabel);
             EmitCall(code, "jml_array_set");
+        }
+
+        private void EmitAssignExprToLabel(StringBuilder code, Expr expr, string destinationLabel)
+        {
+            switch (expr)
+            {
+                case NullExpr:
+                    EmitLoadAddress(code, "x0", destinationLabel);
+                    EmitCall(code, "jml_set_null");
+                    return;
+                case StringExpr text:
+                    EmitLoadAddress(code, "x0", destinationLabel);
+                    EmitLoadAddress(code, "x1", StringLabel(text.Value));
+                    EmitCall(code, "jml_set_string");
+                    return;
+                case NumberExpr number:
+                    EmitLoadAddress(code, "x0", destinationLabel);
+                    EmitLoadImmediate(code, "x1", number.ScaledValue);
+                    EmitCall(code, "jml_set_int");
+                    return;
+                case VarExpr variable:
+                    EmitCopyValue(code, destinationLabel, VariableLabel(variable.Name));
+                    return;
+                case ArrayAccessExpr array:
+                    EmitLoadArrayElementAddress(code, array.Name, array.Indices.ToArray(), "x11");
+                    EmitLoadAddress(code, "x0", destinationLabel);
+                    EmitMove(code, "x1", "x11");
+                    EmitCall(code, "jml_copy_value");
+                    return;
+                case BinaryExpr binary:
+                    EmitNumericExpressionToLabel(code, binary, destinationLabel);
+                    return;
+                default:
+                    throw new ArgumentException("대입할 수 없는 표현식이잖아;;");
+            }
         }
 
         private void EmitAssignTokenToLabel(StringBuilder code, string token, string destinationLabel, int destinationOffset = 0)
@@ -2241,22 +2738,53 @@ namespace jaeminlang
             EmitCall(code, "jml_copy_value");
         }
 
+        private void EmitStoreFunctionReturnBufferPointer(StringBuilder code, string context)
+        {
+            EmitStoreGlobal(code, "x0", FunctionReturnBufferPointerLabel(context));
+        }
+
+        private void EmitCopyValueToCurrentReturnBuffer(StringBuilder code, string sourceLabel, int returnIndex, string context)
+        {
+            EmitLoadGlobal(code, "x10", FunctionReturnBufferPointerLabel(context));
+            if (returnIndex > 0)
+            {
+                EmitLoadImmediate(code, "x11", returnIndex * ValueSize);
+                code.AppendLine("    add x10, x10, x11");
+            }
+
+            EmitMove(code, "x0", "x10");
+            EmitLoadAddress(code, "x1", sourceLabel);
+            EmitCall(code, "jml_copy_value");
+        }
+
         private void EmitRuntime(StringBuilder code)
         {
             EmitSetNull(code);
             EmitSetInt(code);
             EmitSetString(code);
             EmitCopyValue(code);
-            EmitSetArray(code);
-            EmitArrayGet(code);
-            EmitArraySet(code);
             EmitValueToInt(code);
-            EmitNumberPow(code);
-            EmitPrintString(code);
-            EmitPrintInt(code);
-            EmitPrintValue(code);
-            EmitPrintArray(code);
-            EmitReadLine(code);
+
+            if (_program.RuntimeFeatures.HasFlag(NativeRuntimeFeatures.Array))
+            {
+                EmitSetArray(code);
+                EmitArrayGet(code);
+                EmitArraySet(code);
+            }
+
+            if (_program.RuntimeFeatures.HasFlag(NativeRuntimeFeatures.Pow))
+                EmitNumberPow(code);
+
+            if (_program.RuntimeFeatures.HasFlag(NativeRuntimeFeatures.Print))
+            {
+                EmitPrintString(code);
+                EmitPrintInt(code);
+                EmitPrintValue(code);
+                EmitPrintArray(code);
+            }
+
+            if (_program.RuntimeFeatures.HasFlag(NativeRuntimeFeatures.Input))
+                EmitReadLine(code);
         }
 
         private void EmitSetNull(StringBuilder code)
@@ -2436,10 +2964,15 @@ namespace jaeminlang
             EmitLoadImmediate(code, "x0", NumberScale);
             code.AppendLine("jml_number_pow_loop:");
             code.AppendLine("    cbz x11, jml_number_pow_done");
+            code.AppendLine("    tbz x11, #0, jml_number_pow_square");
             code.AppendLine("    mul x0, x0, x10");
             EmitLoadImmediate(code, "x12", NumberScale);
             code.AppendLine("    sdiv x0, x0, x12");
-            code.AppendLine("    sub x11, x11, #1");
+            code.AppendLine("jml_number_pow_square:");
+            code.AppendLine("    mul x10, x10, x10");
+            EmitLoadImmediate(code, "x12", NumberScale);
+            code.AppendLine("    sdiv x10, x10, x12");
+            code.AppendLine("    lsr x11, x11, #1");
             code.AppendLine("    b jml_number_pow_loop");
             code.AppendLine("jml_number_pow_done:");
             code.AppendLine("    cbz x8, jml_number_pow_ret");
@@ -2640,10 +3173,16 @@ namespace jaeminlang
             code.AppendLine("jml_tmp_value:");
             code.AppendLine("    .quad 0, 0, 0, 0");
 
-            for (int i = 0; i < ReturnSlotCount; i++)
+            foreach (FunctionDefinition function in _functions.Values.OrderBy(function => function.Label))
             {
-                code.AppendLine(ReturnSlotLabel(i) + ":");
-                code.AppendLine("    .quad 0, 0, 0, 0");
+                code.AppendLine(FunctionReturnBufferPointerLabel(function.Label) + ":");
+                code.AppendLine("    .quad 0");
+            }
+
+            foreach (ArrayStorage storage in _returnBuffers.Values.OrderBy(storage => storage.Label))
+            {
+                code.AppendLine(storage.Label + ":");
+                code.AppendLine($"    .space {Math.Max(1, storage.Length) * ValueSize}");
             }
 
             foreach (string label in _variables.Values.Order())
@@ -2669,10 +3208,18 @@ namespace jaeminlang
         {
             code.AppendLine("    stp x29, x30, [sp, #-16]!");
             code.AppendLine("    mov x29, sp");
+            code.AppendLine("    stp x19, x20, [sp, #-16]!");
+            code.AppendLine("    stp x21, x22, [sp, #-16]!");
+            code.AppendLine("    stp x23, x24, [sp, #-16]!");
+            code.AppendLine("    stp x25, x26, [sp, #-16]!");
         }
 
         private void EmitFunctionEpilogue(StringBuilder code)
         {
+            code.AppendLine("    ldp x25, x26, [sp], #16");
+            code.AppendLine("    ldp x23, x24, [sp], #16");
+            code.AppendLine("    ldp x21, x22, [sp], #16");
+            code.AppendLine("    ldp x19, x20, [sp], #16");
             code.AppendLine("    ldp x29, x30, [sp], #16");
             code.AppendLine("    ret");
         }
@@ -2783,21 +3330,37 @@ namespace jaeminlang
 
         private string VariableLabel(string name)
         {
-            if (_variables.TryGetValue(name, out string? label))
+            return VariableLabel(_currentContext, name);
+        }
+
+        private string VariableLabel(string context, string name)
+        {
+            return VariableLabel(context, name, forceLocal: false);
+        }
+
+        private string VariableLabel(string context, string name, bool forceLocal)
+        {
+            string key = context + ":" + name;
+            if (_variables.TryGetValue(key, out string? label))
+                return label;
+
+            string globalKey = JMLNativeParser.MainContext + ":" + name;
+            if (!forceLocal && context != JMLNativeParser.MainContext && _variables.TryGetValue(globalKey, out label))
                 return label;
 
             label = "jml_var_" + _variables.Count;
-            _variables[name] = label;
+            _variables[key] = label;
             return label;
         }
 
         private string InputBufferLabel(string name)
         {
-            if (_inputBuffers.TryGetValue(name, out string? label))
+            string key = _currentContext + ":" + name;
+            if (_inputBuffers.TryGetValue(key, out string? label))
                 return label;
 
             label = "jml_input_" + _inputBuffers.Count;
-            _inputBuffers[name] = label;
+            _inputBuffers[key] = label;
             return label;
         }
 
@@ -2821,19 +3384,40 @@ namespace jaeminlang
             return storage;
         }
 
+        private string ReturnBufferLabel(int lineIndex, int valueCount)
+        {
+            string key = _currentContext + ":" + lineIndex;
+            if (_returnBuffers.TryGetValue(key, out ArrayStorage? storage))
+                return storage.Label;
+
+            storage = new ArrayStorage("jml_call_ret_" + _returnBuffers.Count, Math.Max(1, valueCount));
+            _returnBuffers[key] = storage;
+            return storage.Label;
+        }
+
+        private static string FunctionReturnBufferPointerLabel(string context)
+        {
+            return context + "_return_buffer";
+        }
+
         private static string LineLabel(string context, int lineNumber)
         {
             return $"L_{context}_line_{lineNumber}";
         }
 
+        private bool ShouldEmitLineLabel(string context, int lineNumber)
+        {
+            return _program.LabelLines.TryGetValue(context, out HashSet<int>? lines) && lines.Contains(lineNumber);
+        }
+
+        private bool IsDeadLine(string context, int lineNumber)
+        {
+            return _program.DeadLines.TryGetValue(context, out HashSet<int>? lines) && lines.Contains(lineNumber);
+        }
+
         private static string ReturnLabel(string context)
         {
             return $"L_{context}_return";
-        }
-
-        private static string ReturnSlotLabel(int index)
-        {
-            return "jml_return_" + index;
         }
 
         private bool LooksLikeFunctionCall(string[] tokens)
