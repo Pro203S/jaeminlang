@@ -30,7 +30,7 @@ namespace jaeminlang
             string objectPath = ResolveObjectPath(options, sourcePath, outputPath);
 
             if (!options.EmitAssemblyOnly && PathEquals(sourcePath, outputPath))
-                throw new ArgumentException("출력 파일이 소스 파일과 같잖아;; 다른 경로를 줘.");
+                throw new ArgumentException("출력 파일이 소스 파일과 같잖아;;");
 
             if (options.EmitAssemblyOnly && options.EmitObjectOnly)
                 throw new ArgumentException("-S랑 -c는 같이 쓸 수 없잖아;;");
@@ -91,7 +91,7 @@ namespace jaeminlang
             string outputPath = ResolveLinkOutputPath(options, objectPaths[0], target);
 
             if (objectPaths.Any(objectPath => PathEquals(objectPath, outputPath)))
-                throw new ArgumentException("출력 파일이 오브젝트 파일과 같잖아;; 다른 경로를 줘.");
+                throw new ArgumentException("출력 파일이 오브젝트 파일과 같잖아;;");
 
             RunNativeLinker(target, objectPaths, outputPath);
 
@@ -140,7 +140,7 @@ namespace jaeminlang
         {
             string rid = NormalizeRid(rawRid);
             if (!SupportedRids.Contains(rid))
-                throw new ArgumentException($"지원하지 않는 RID야: {rawRid}\n지원 RID: {string.Join(", ", SupportedRidList)}");
+                throw new ArgumentException($"어이쿠?? 넌 이게 지원 하는걸로 보이냐?");
 
             return NativeTarget.FromRid(rid);
         }
@@ -235,7 +235,7 @@ namespace jaeminlang
         private static void RunNativeAssembler(NativeTarget target, string assemblyPath, string objectPath)
         {
             string assembler = FindExecutable(GetToolCandidates(target))
-                ?? throw new InvalidOperationException("clang/gcc/cc를 못 찾았잖아;; 오브젝트를 만들려면 네이티브 툴체인이 필요해.");
+                ?? throw new InvalidOperationException("아니;;; 오브젝트를 만들려면 네이티브 툴체인이 필요한데 clang/gcc/cc도 안줘?");
 
             string? objectDirectory = Path.GetDirectoryName(objectPath);
             if (!string.IsNullOrEmpty(objectDirectory))
@@ -247,13 +247,13 @@ namespace jaeminlang
             startInfo.ArgumentList.Add("-o");
             startInfo.ArgumentList.Add(objectPath);
 
-            RunNativeTool(startInfo, "네이티브 어셈블이 실패했잖아;;");
+            RunNativeTool(startInfo, "어이쿠? 네이티브 어셈블이 실패했네?");
         }
 
         private static void RunNativeLinker(NativeTarget target, IReadOnlyList<string> objectPaths, string outputPath)
         {
             string linker = FindExecutable(GetToolCandidates(target))
-                ?? throw new InvalidOperationException("clang/gcc/cc를 못 찾았잖아;; 실행 파일까지 만들려면 네이티브 툴체인이 필요해. 어셈블리만 보려면 --emit-asm을 써.");
+                ?? throw new InvalidOperationException("아니;;; 오브젝트를 만들려면 네이티브 툴체인이 필요한데 clang/gcc/cc도 안줘? 어셈블리만 볼거면 --emit-asm을 쓰던가 해야지;;");
 
             string? outputDirectory = Path.GetDirectoryName(outputPath);
             if (!string.IsNullOrEmpty(outputDirectory))
@@ -266,7 +266,7 @@ namespace jaeminlang
             startInfo.ArgumentList.Add("-o");
             startInfo.ArgumentList.Add(outputPath);
 
-            RunNativeTool(startInfo, "네이티브 링크가 실패했잖아;;");
+            RunNativeTool(startInfo, "어이쿠? 네이티브 링크가 실패했네?");
         }
 
         private static string[] GetToolCandidates(NativeTarget target)
@@ -298,7 +298,7 @@ namespace jaeminlang
         private static void RunNativeTool(ProcessStartInfo startInfo, string errorMessage)
         {
             using Process process = Process.Start(startInfo)
-                ?? throw new InvalidOperationException("네이티브 툴 실행에 실패했잖아;;");
+                ?? throw new InvalidOperationException("어이쿠? 네이티브 툴 실행이 안됐네?");
 
             Task<string> stdoutTask = process.StandardOutput.ReadToEndAsync();
             Task<string> stderrTask = process.StandardError.ReadToEndAsync();
@@ -480,7 +480,7 @@ namespace jaeminlang
                     IsWindows = true,
                     IsArm64 = true
                 },
-                _ => throw new ArgumentException("지원하지 않는 RID야: " + rid)
+                _ => throw new ArgumentException("니 눈엔 " + rid + "가 지원하냐?")
             };
         }
     }
