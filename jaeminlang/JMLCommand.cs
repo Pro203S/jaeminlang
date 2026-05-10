@@ -1,4 +1,5 @@
 ﻿using System.Text;
+using static jaeminlang.Utils;
 
 namespace jaeminlang
 {
@@ -16,7 +17,7 @@ namespace jaeminlang
             Action<string>? invokeFunction = null)
         {
             rawCmd = raw;
-            args = Utils.GetArguments(raw);
+            args = GetArguments(raw);
             cmdName = args[0];
 
             if (cmdName == "안산" /* 출력 */)
@@ -64,11 +65,11 @@ namespace jaeminlang
                         return;
                     }
 
-                    if (Utils.IsExpression(data))
+                    if (IsExpression(data))
                     {
                         string exp = data[..1];
-                        int origin = Utils.GetIntValue(key);
-                        int valueToCalc = ResolveIntValue(data[1..]);
+                        double origin = GetNumberValue(key);
+                        double valueToCalc = ResolveNumberValue(data[1..]);
 
                         switch (exp)
                         {
@@ -85,7 +86,7 @@ namespace jaeminlang
                                 Variables.SetValue(key, origin / valueToCalc);
                                 break;
                             case "^":
-                                Variables.SetValue(key, origin ^ valueToCalc);
+                                Variables.SetValue(key, Math.Pow(origin, valueToCalc));
                                 break;
                             default:
                                 throw new ArgumentException("이런 수식은 안산에도 없어;;");
@@ -117,8 +118,8 @@ namespace jaeminlang
                     string rawVal2 = args[2] ?? throw new NullReferenceException("뭐랑 같아야하는진 알아야지;;");
                     string rawGoTo = args[3] ?? throw new NullReferenceException("어디로 가야하는진 알아야 할 거 아니야;;");
 
-                    int val1 = ResolveIntValue(rawVal1);
-                    int val2 = ResolveIntValue(rawVal2);
+                    int val1 = (int)ResolveNumberValue(rawVal1);
+                    int val2 = (int)ResolveNumberValue(rawVal2);
 
                     if (!int.TryParse(rawGoTo, out int goTo))
                         throw new ArgumentException(rawGoTo + "은(는) 숫자가 아니잖아;;");
@@ -168,98 +169,6 @@ namespace jaeminlang
             if (string.IsNullOrEmpty(cmdName)) return;
 
             throw new ArgumentException("아니 " + cmdName + "은(는) 안산에도 없는 명령언데;;");
-        }
-
-        private static void SetArrayValue(string key, string[] rawValues)
-        {
-            if (string.IsNullOrWhiteSpace(key))
-                throw new ArgumentException("배열 이름이 비었잖아;;");
-
-            int[] values = rawValues.Select(ResolveIntValue).ToArray();
-            Variables.SetValue(key, values);
-        }
-
-        private static void SetArrayItemValue(string rawKey, string rawValue)
-        {
-            (string arrayName, int arrayIndex) = ParseArrayAccess(rawKey);
-            int[] array = Utils.GetIntArray(arrayName);
-
-            if (arrayIndex < 0 || arrayIndex >= array.Length)
-                throw new IndexOutOfRangeException("배열 범위를 벗어났잖아;;");
-
-            array[arrayIndex] = ResolveIntValue(rawValue);
-            Variables.SetValue(arrayName, array);
-        }
-
-        private static object ResolveAssignableValue(string token)
-        {
-            if (IsStringLiteral(token))
-                return token[1..^1];
-
-            if (Utils.IsNumber(token))
-                return int.Parse(token);
-
-            if (token.Contains('.'))
-                return ResolveArrayItemValue(token);
-
-            if (!Variables.storage.ContainsKey(token))
-                throw new ArgumentNullException(token + "이(가) 정의가 안됐잖아;;");
-
-            return Variables.GetValue(token) ?? throw new NullReferenceException(token + " 변수에 값이 저장이 안되어있잖아;;");
-        }
-
-        private static string ResolveOutput(string token)
-        {
-            if (IsStringLiteral(token))
-                return token[1..^1];
-
-            if (Utils.IsNumber(token))
-                return token;
-
-            if (token.Contains('.'))
-                return ResolveArrayItemValue(token).ToString() ?? "여친";
-
-            if (!Variables.storage.ContainsKey(token))
-                return "여친";
-
-            object? value = Variables.GetValue(token);
-            return value?.ToString() ?? "여친";
-        }
-
-        private static int ResolveIntValue(string token)
-        {
-            if (Utils.IsNumber(token))
-                return int.Parse(token);
-
-            if (token.Contains('.'))
-                return ResolveArrayItemValue(token);
-
-            return Utils.GetIntValue(token);
-        }
-
-        private static int ResolveArrayItemValue(string token)
-        {
-            (string arrayName, int arrayIndex) = ParseArrayAccess(token);
-            int[] array = Utils.GetIntArray(arrayName);
-
-            if (arrayIndex < 0 || arrayIndex >= array.Length)
-                throw new IndexOutOfRangeException("배열 범위를 벗어났잖아;;");
-
-            return array[arrayIndex];
-        }
-
-        private static (string arrayName, int arrayIndex) ParseArrayAccess(string token)
-        {
-            string[] parts = token.Split('.', 2);
-            if (parts.Length != 2 || !int.TryParse(parts[1], out int arrayIndex))
-                throw new InvalidCastException("어이쿠?? 넌 이게 딕셔너리냐?? 숫자를 적어야지;;");
-
-            return (parts[0], arrayIndex);
-        }
-
-        private static bool IsStringLiteral(string token)
-        {
-            return token.StartsWith('\"') && token.EndsWith('\"');
         }
     }
 }
