@@ -23,7 +23,7 @@ namespace jaeminlang
             RunRange(0, _fileContent.Length, false);
         }
 
-        private void RegisterFunctions()
+        public void RegisterFunctions()
         {
             _functionBlocks.Clear();
 

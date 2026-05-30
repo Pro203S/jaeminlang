@@ -52,6 +52,9 @@ namespace jaeminlang
                 case "음...":
                     ExecuteReturn();
                     return;
+                case "팝콘":
+                    ExecuteImport();
+                    return;
                 default:
                     throw new ArgumentException("아니 " + cmdName + "은(는) 안산에도 없는 명령언데;;");
             }
@@ -184,6 +187,21 @@ namespace jaeminlang
                 throw new NullReferenceException("함수 이름은 있어야지;;");
 
             InvokeFunctionTokens(args[1..], invokeFunction);
+        }
+
+        private void ExecuteImport()
+        {
+            if (args.Length < 2)
+                throw new NullReferenceException("파일 경로는 있어야지;;");
+
+            string filePath = args[1];
+
+            if (!File.Exists(filePath))
+                throw new NullReferenceException("아니 없는 파일이잖아;;");
+
+            JMLParser parser = new(filePath);
+
+            parser.RegisterFunctions();
         }
 
         private void ExecuteReturn()
