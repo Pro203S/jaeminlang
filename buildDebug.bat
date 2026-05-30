@@ -34,5 +34,5 @@ for %%F in (
 
 echo ========================================
 echo Debug build completed!
-echo Root output: .\jaeminlang.exe
+echo output: .\debug\jaeminlang.exe
 echo ========================================
