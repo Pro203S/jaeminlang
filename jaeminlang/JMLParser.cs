@@ -5,26 +5,33 @@ namespace jaeminlang
 {
     public class JMLParser
     {   
+        private static readonly HashSet<string> RegisteredFiles = new(
+            OperatingSystem.IsWindows() ? StringComparer.OrdinalIgnoreCase : StringComparer.Ordinal);
+
         private readonly string _filepath;
         private string[] _fileContent = [];
         private readonly Dictionary<int, int> _functionBlocks = [];
 
         public JMLParser(string filepath)
         {
-            _filepath = filepath;
+            _filepath = Path.GetFullPath(filepath);
+            _fileContent = File.ReadAllLines(_filepath);
         }
 
         public void Run()
         {
             Variables.Reset();
             Functions.Reset();
-            _fileContent = File.ReadAllLines(_filepath);
+            RegisteredFiles.Clear();
             RegisterFunctions();
             RunRange(0, _fileContent.Length, false);
         }
 
         public void RegisterFunctions()
         {
+            if (!RegisteredFiles.Add(_filepath))
+                return;
+
             _functionBlocks.Clear();
 
             for (int i = 0; i < _fileContent.Length; i++)
@@ -34,7 +41,16 @@ namespace jaeminlang
                     continue;
 
                 string[] args = Utils.GetArguments(line);
-                if (args.Length == 0 || args[0] != "엘릭서")
+                if (args.Length == 0)
+                    continue;
+
+                if (args[0] == "팝콘")
+                {
+                    ImportLibrary(args.Length > 1 ? args[1] : throw new NullReferenceException("파일 경로는 있어야지;;"));
+                    continue;
+                }
+
+                if (args[0] != "엘릭서")
                     continue;
 
                 if (args.Length < 2)
@@ -46,6 +62,7 @@ namespace jaeminlang
                 int returnLine = FindFunctionReturnLine(_fileContent, i + 1);
                 Functions.SetValue(args[1], new Function
                 {
+                    owner = this,
                     bodyStart = i + 1,
                     returnLine = returnLine,
                     parameters = args.Skip(2).ToArray()
@@ -78,7 +95,8 @@ namespace jaeminlang
                             i = goTo - 2;
                         }),
                         InvokeFunction,
-                        Functions.Contains);
+                        Functions.Contains,
+                        ImportLibrary);
                     cmd.Execute();
                 }
                 catch (JMLReturnSignal) when (allowReturn)
@@ -92,7 +110,7 @@ namespace jaeminlang
                 catch (Exception e)
                 {
                     Stream stderr = Console.OpenStandardError();
-                    stderr.Write(Encoding.UTF8.GetBytes($"{i + 1}번째 줄: {e.Message}\r\n"));
+                    stderr.Write(Encoding.UTF8.GetBytes($"[{_filepath}] {i + 1}번째 줄: {e.Message}\r\n"));
                     stderr.Write(Encoding.UTF8.GetBytes(e.StackTrace + "\r\n"));
 
                     Environment.Exit(1);
@@ -103,6 +121,11 @@ namespace jaeminlang
         private object?[] InvokeFunction(string name, string[] rawArgs)
         {
             Function function = Functions.GetRequired(name);
+            return function.owner.InvokeRegisteredFunction(name, function, rawArgs);
+        }
+
+        private object?[] InvokeRegisteredFunction(string name, Function function, string[] rawArgs)
+        {
             if (function.parameters.Length != rawArgs.Length)
                 throw new ArgumentException(name + " 함수 인수 개수가 안맞잖아;;");
 
@@ -127,6 +150,30 @@ namespace jaeminlang
             {
                 Variables.PopScope();
             }
+        }
+
+        private void ImportLibrary(string rawPath)
+        {
+            string filePath = ResolveImportPath(rawPath);
+
+            if (!File.Exists(filePath))
+                throw new NullReferenceException("아니 없는 파일이잖아;;");
+
+            JMLParser parser = new(filePath);
+            parser.RegisterFunctions();
+        }
+
+        private string ResolveImportPath(string rawPath)
+        {
+            string path = IsStringLiteral(rawPath)
+                ? rawPath[1..^1]
+                : rawPath;
+
+            if (Path.IsPathRooted(path))
+                return Path.GetFullPath(path);
+
+            string baseDirectory = Path.GetDirectoryName(_filepath) ?? Directory.GetCurrentDirectory();
+            return Path.GetFullPath(Path.Combine(baseDirectory, path));
         }
     }
 }

@@ -8,6 +8,7 @@ namespace jaeminlang
         private readonly Action<int>? repeat;
         private readonly Func<string, string[], object?[]>? invokeFunction;
         private readonly Func<string, bool>? functionExists;
+        private readonly Action<string>? importLibrary;
 
         public string rawCmd;
         public string cmdName;
@@ -17,7 +18,8 @@ namespace jaeminlang
             string raw,
             Action<int>? repeat,
             Func<string, string[], object?[]>? invokeFunction = null,
-            Func<string, bool>? functionExists = null)
+            Func<string, bool>? functionExists = null,
+            Action<string>? importLibrary = null)
         {
             rawCmd = raw;
             args = GetArguments(raw);
@@ -25,6 +27,7 @@ namespace jaeminlang
             this.repeat = repeat;
             this.invokeFunction = invokeFunction;
             this.functionExists = functionExists;
+            this.importLibrary = importLibrary;
         }
 
         public void Execute()
@@ -194,14 +197,10 @@ namespace jaeminlang
             if (args.Length < 2)
                 throw new NullReferenceException("파일 경로는 있어야지;;");
 
-            string filePath = args[1];
+            if (importLibrary == null)
+                throw new InvalidOperationException("여기서는 팝콘을 불러올 수가 없잖아;;");
 
-            if (!File.Exists(filePath))
-                throw new NullReferenceException("아니 없는 파일이잖아;;");
-
-            JMLParser parser = new(filePath);
-
-            parser.RegisterFunctions();
+            importLibrary(args[1]);
         }
 
         private void ExecuteReturn()

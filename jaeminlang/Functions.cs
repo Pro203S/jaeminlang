@@ -1,10 +1,11 @@
 namespace jaeminlang
 {
-    public struct Function
+    public sealed class Function
     {
-        public int bodyStart;
-        public int returnLine;
-        public string[] parameters;
+        public required JMLParser owner;
+        public required int bodyStart;
+        public required int returnLine;
+        public required string[] parameters;
     }
 
     public static class Functions
@@ -28,7 +29,7 @@ namespace jaeminlang
 
         public static Function? GetValue(string key)
         {
-            return functions.TryGetValue(key, out Function function) ? function : null;
+            return functions.TryGetValue(key, out Function? function) ? function : null;
         }
 
         public static Function GetRequired(string key)
