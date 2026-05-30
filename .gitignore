@@ -366,3 +366,4 @@ FodyWeavers.xsd
 
 # 모든 jml 파일
 **/*.jml
+debug/
