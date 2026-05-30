@@ -71,12 +71,16 @@ namespace jaeminlang
         {
             Console.WriteLine("""
                 jaeminlang
+                by Pro203S (https://github.com/Pro203S/jaeminlang)
+
+                콘솔에서 실행:
+                    jaeminlang
 
                 실행:
-                  jaeminlang <source.jml>
+                    jaeminlang <source.jml>
 
                 도움말:
-                  jaeminlang --help
+                    jaeminlang --help
                 """);
         }
     }
