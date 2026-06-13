@@ -58,6 +58,15 @@ namespace jaeminlang
                 case "팝콘":
                     ExecuteImport();
                     return;
+                case "콜라":
+                    ExecuteLogicalOperate();
+                    return;
+                case "샤갈":
+                    ExecuteNot();
+                    return;
+                case "혜선":
+                    ExecuteTerminate();
+                    return;
                 default:
                     throw new ArgumentException("아니 " + cmdName + "은(는) 안산에도 없는 명령언데;;");
             }
@@ -207,6 +216,59 @@ namespace jaeminlang
         {
             object?[] values = ResolveReturnValues(args.Length > 1 ? args[1..] : [], functionExists, invokeFunction);
             throw new JMLReturnSignal(values);
+        }
+
+        private void ExecuteLogicalOperate()
+        {
+            if (args.Length < 5)
+                throw new NullReferenceException("콜라 인수가 부족하잖아;;");
+
+            double val1 = ResolveNumberValue(args[1]);
+            string op = args[2];
+            double val2 = ResolveNumberValue(args[3]);
+            string saveTo = args[3];
+            string value;
+
+            // `&`, `|`, `=`, `<`, `>`
+
+            switch (op)
+            {
+                case "&":
+                    value = (val1 == 1 && val2 == 1) ? "1" : "0";
+                    break;
+                case "|":
+                    value = (val1 == 1 || val2 == 1) ? "1" : "0";
+                    break;
+                case "=":
+                    value = val1 == val2 ? "1" : "0";
+                    break;
+                case "<":
+                    value = (val1 < val2) ? "1" : "0";
+                    break;
+                case ">":
+                    value = (val1 > val2) ? "1" : "0";
+                    break;
+                default:
+                    throw new ArgumentException($"어이쿠 {op} 연산자가 뭐야");
+            }
+
+            Variables.SetValue(saveTo, value);
+        }
+
+        private void ExecuteNot()
+        {
+            if (args.Length < 3)
+                throw new NullReferenceException("샤갈 인수가 부족하잖아;;");
+            
+            double val = ResolveNumberValue(args[1]);
+            string toSave = args[2];
+
+            Variables.SetValue(toSave, val == 1 ? 0 : 1);
+        }
+
+        private void ExecuteTerminate()
+        {
+            Environment.Exit(0);
         }
     }
 }
