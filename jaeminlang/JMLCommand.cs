@@ -226,7 +226,7 @@ namespace jaeminlang
             double val1 = ResolveNumberValue(args[1]);
             string op = args[2];
             double val2 = ResolveNumberValue(args[3]);
-            string saveTo = args[3];
+            string saveTo = args[4];
             string value;
 
             // `&`, `|`, `=`, `<`, `>`
