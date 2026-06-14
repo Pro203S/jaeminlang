@@ -64,7 +64,7 @@ namespace jaeminlang
                 case "샤갈":
                     ExecuteNot();
                     return;
-                case "혜선":
+                case "해선":
                     ExecuteTerminate();
                     return;
                 default:
