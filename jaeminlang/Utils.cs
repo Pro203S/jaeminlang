@@ -314,13 +314,25 @@ namespace jaeminlang
             List<int> indices = [];
             foreach (string part in parts.Skip(1))
             {
-                if (!int.TryParse(part, out int index))
-                    throw new InvalidCastException("어이쿠?? 넌 이게 딕셔너리냐?? 숫자를 적어야지;;");
-
-                indices.Add(index);
+                indices.Add(ResolveArrayIndex(part));
             }
 
             return (parts[0], [.. indices]);
+        }
+
+        private static int ResolveArrayIndex(string token)
+        {
+            if (int.TryParse(token, NumberStyles.Integer, Culture, out int literalIndex))
+                return literalIndex;
+
+            if (!Variables.TryGetValue(token, out object? rawIndex))
+                throw new ArgumentNullException(token + "이(가) 정의가 안됐잖아;;");
+
+            double index = ConvertToNumber(rawIndex, token + "은(는) 배열 인덱스로 쓸 수 있는 숫자가 아니잖아;;");
+            if (!double.IsFinite(index) || index != Math.Truncate(index) || index < int.MinValue || index > int.MaxValue)
+                throw new InvalidCastException(token + "은(는) 배열 인덱스로 쓸 수 있는 정수가 아니잖아;;");
+
+            return (int)index;
         }
 
         #endregion
