@@ -20,7 +20,7 @@
 
 ## 실행
 
-재민랭 소스코드를 실행하시려면 릴리즈로 가셔서  
+재민랭 소스코드를 실행하시려면 [릴리즈](https://github.com/Pro203S/jaeminlang/releases)로 가셔서  
 자신의 OS에 맞게 실행 파일을 다운로드 하신 후  
 
 Linux / macOS의 경우:
@@ -391,6 +391,10 @@ by. [holy0unjinx](https://github.com/holy0unjinx)
 
 ## 업데이트 로그
 
+### v0.7.0
+
+- 배열 변수 인덱스 추가
+
 ### v0.6.1
 
 - [해선 키워드 오타 수정](#해선-프로그램-종료)
@@ -408,7 +412,7 @@ by. [holy0unjinx](https://github.com/holy0unjinx)
 
 ### v0.4.0
 
-- [컴파일 기능 추가](#컴파일) ([by @feralthedogg](https://github.com/Feralthedogg))
+- 컴파일 기능 추가 ([by @feralthedogg](https://github.com/Feralthedogg))
 
 ### v0.3.0
 
