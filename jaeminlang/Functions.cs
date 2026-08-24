@@ -1,3 +1,5 @@
+using jaeminlang.Mode;
+
 namespace jaeminlang
 {
     public sealed class Function
@@ -6,6 +8,7 @@ namespace jaeminlang
         public required int bodyStart;
         public required int returnLine;
         public required string[] parameters;
+        public required ExecutionMode? executionMode;
     }
 
     public static class Functions

@@ -34,6 +34,7 @@ namespace jaeminlang
                 return;
 
             _functionBlocks.Clear();
+            ExecutionMode? declaredMode = ExecutionMode.Default;
 
             for (int i = 0; i < _fileContent.Length; i++)
             {
@@ -44,6 +45,12 @@ namespace jaeminlang
                 string[] args = GetArguments(line);
                 if (args.Length == 0)
                     continue;
+
+                if (args[0] == "메가커피")
+                {
+                    declaredMode = ModeManager.GetDeclaredMode(args);
+                    continue;
+                }
 
                 if (args[0] == "팝콘")
                 {
@@ -66,7 +73,8 @@ namespace jaeminlang
                     owner = this,
                     bodyStart = i + 1,
                     returnLine = returnLine,
-                    parameters = args.Skip(2).ToArray()
+                    parameters = args.Skip(2).ToArray(),
+                    executionMode = declaredMode
                 });
                 _functionBlocks[i] = returnLine;
                 i = returnLine;
@@ -128,25 +136,29 @@ namespace jaeminlang
                 throw new ArgumentException(name + " 함수 인수 개수가 안맞잖아;;");
 
             object?[] resolvedArgs = rawArgs.Select(Utils.ResolveAssignableValue).ToArray();
+            ExecutionMode functionMode = function.executionMode ?? ModeManager.Current;
 
-            Variables.PushScope();
-            try
+            using (ModeManager.EnterMode(functionMode))
             {
-                for (int i = 0; i < function.parameters.Length; i++)
+                Variables.PushScope();
+                try
                 {
-                    Variables.SetLocalValue(function.parameters[i], resolvedArgs[i]);
-                }
+                    for (int i = 0; i < function.parameters.Length; i++)
+                    {
+                        Variables.SetLocalValue(function.parameters[i], resolvedArgs[i]);
+                    }
 
-                RunRange(function.bodyStart, function.returnLine + 1, true);
-                return [];
-            }
-            catch (JMLReturnSignal signal)
-            {
-                return signal.Values;
-            }
-            finally
-            {
-                Variables.PopScope();
+                    RunRange(function.bodyStart, function.returnLine + 1, true);
+                    return [];
+                }
+                catch (JMLReturnSignal signal)
+                {
+                    return signal.Values;
+                }
+                finally
+                {
+                    Variables.PopScope();
+                }
             }
         }
 
