@@ -1,10 +1,26 @@
 using System.Globalization;
+using System.Text;
 
 namespace jaeminlang
 {
     public static class Utils
     {
         private static readonly CultureInfo Culture = CultureInfo.InvariantCulture;
+
+        public static void HandleError(string message)
+        {
+            Stream stderr = Console.OpenStandardError();
+            stderr.Write(Encoding.UTF8.GetBytes(message + Environment.NewLine));
+        }
+
+        public static void HandleError(Exception exception, string? context = null)
+        {
+            string message = string.IsNullOrWhiteSpace(context)
+                ? exception.Message
+                : $"{context}: {exception.Message}";
+
+            HandleError(message);
+        }
 
         #region parse
 
@@ -144,7 +160,7 @@ namespace jaeminlang
                 return double.Parse(token, Culture);
 
             if (token.Contains('.'))
-                return ResolveArrayItemValue(token);
+                return ResolveCollectionItemValue(token);
 
             if (!Variables.ContainsKey(token))
                 throw new ArgumentNullException(token + "이(가) 정의가 안됐잖아;;");
@@ -169,7 +185,7 @@ namespace jaeminlang
                 return double.Parse(token, Culture);
 
             if (token.Contains('.'))
-                return ResolveArrayItemValue(token);
+                return ResolveCollectionItemValue(token);
 
             return Variables.GetValue(token);
         }
@@ -180,7 +196,7 @@ namespace jaeminlang
                 return double.Parse(token, Culture);
 
             if (token.Contains('.'))
-                return ConvertToNumber(ResolveArrayItemValue(token), token + "은(는) 숫자가 아니잖아;;");
+                return ConvertToNumber(ResolveCollectionItemValue(token), token + "은(는) 숫자가 아니잖아;;");
 
             return GetNumberValue(token);
         }
@@ -337,6 +353,75 @@ namespace jaeminlang
 
         #endregion
 
+        #region 딕셔너리
+
+        public static Dictionary<string, object?> GetDictionaryValue(string key)
+        {
+            object? raw = Variables.GetValue(key) ?? throw new ArgumentNullException(key + "이(가) 정의가 안됐잖아;;");
+            return GetDictionaryValue(raw, key + "은(는) 딕셔너리가 아니잖아;;");
+        }
+
+        public static void SetDictionaryValue(string key, string[] rawEntries)
+        {
+            if (string.IsNullOrWhiteSpace(key))
+                throw new ArgumentException("딕셔너리 이름이 비었잖아;;");
+
+            if (rawEntries.Length % 2 != 0)
+                throw new ArgumentException("딕셔너리는 키와 값을 짝으로 줘야지;;");
+
+            Dictionary<string, object?> dictionary = [];
+            for (int i = 0; i < rawEntries.Length; i += 2)
+            {
+                string dictionaryKey = ResolveDictionaryKey(rawEntries[i]);
+                dictionary[dictionaryKey] = ResolveAssignableValue(rawEntries[i + 1]);
+            }
+
+            Variables.SetValue(key, dictionary);
+        }
+
+        #endregion
+
+        #region 컬렉션
+
+        public static object? ResolveCollectionItemValue(string token)
+        {
+            (string collectionName, string[] members) = ParseCollectionAccess(token);
+            if (!Variables.TryGetValue(collectionName, out object? current))
+                throw new ArgumentNullException(collectionName + "이(가) 정의가 안됐잖아;;");
+
+            foreach (string member in members)
+            {
+                current = GetCollectionElement(current, member);
+            }
+
+            return current;
+        }
+
+        public static void SetCollectionItemValue(string token, object? value)
+        {
+            (string collectionName, string[] members) = ParseCollectionAccess(token);
+            if (!Variables.TryGetValue(collectionName, out object? current))
+                throw new ArgumentNullException(collectionName + "이(가) 정의가 안됐잖아;;");
+
+            for (int i = 0; i < members.Length - 1; i++)
+            {
+                current = GetCollectionElement(current, members[i]);
+            }
+
+            SetCollectionElement(current, members[^1], value);
+        }
+
+        public static (string collectionName, string[] members) ParseCollectionAccess(string token)
+        {
+            string[] parts = token.Split('.');
+            if (parts.Length < 2 || string.IsNullOrWhiteSpace(parts[0]))
+                throw new InvalidCastException("컬렉션 접근이 이상하잖아;;");
+
+            return (parts[0], parts[1..]);
+        }
+
+        #endregion
+
         #region 포맷
 
         public static string FormatOutputValue(object? value)
@@ -349,6 +434,7 @@ namespace jaeminlang
                 float f => f.ToString("0.###############################", Culture),
                 object?[] array => "[" + string.Join(", ", array.Select(FormatOutputValue)) + "]",
                 double[] numbers => "[" + string.Join(", ", numbers.Select(number => FormatOutputValue(number))) + "]",
+                Dictionary<string, object?> dictionary => "{" + string.Join(", ", dictionary.Select(entry => $"{entry.Key}: {FormatOutputValue(entry.Value)}")) + "}",
                 IFormattable formattable => formattable.ToString(null, Culture),
                 _ => value.ToString() ?? "여친"
             };
@@ -405,6 +491,49 @@ namespace jaeminlang
                 double[] numbers => [.. numbers.Cast<object?>()],
                 _ => throw new InvalidCastException(message)
             };
+        }
+
+        private static Dictionary<string, object?> GetDictionaryValue(object? raw, string message)
+        {
+            return raw as Dictionary<string, object?> ?? throw new InvalidCastException(message);
+        }
+
+        private static object? GetCollectionElement(object? collection, string member)
+        {
+            if (collection is Dictionary<string, object?> dictionary)
+            {
+                string key = ResolveDictionaryKey(member);
+                if (!dictionary.TryGetValue(key, out object? value))
+                    throw new KeyNotFoundException(key + " 키가 딕셔너리에 없잖아;;");
+
+                return value;
+            }
+
+            object?[] array = GetArrayValue(collection, "배열이나 딕셔너리가 아니잖아;;");
+            return GetArrayElement(array, ResolveArrayIndex(member));
+        }
+
+        private static void SetCollectionElement(object? collection, string member, object? value)
+        {
+            if (collection is Dictionary<string, object?> dictionary)
+            {
+                dictionary[ResolveDictionaryKey(member)] = value;
+                return;
+            }
+
+            object?[] array = GetArrayValue(collection, "배열이나 딕셔너리가 아니잖아;;");
+            int index = ResolveArrayIndex(member);
+            EnsureArrayIndex(array, index);
+            array[index] = value;
+        }
+
+        private static string ResolveDictionaryKey(string token)
+        {
+            string key = IsStringLiteral(token) ? token[1..^1] : token;
+            if (string.IsNullOrEmpty(key))
+                throw new ArgumentException("딕셔너리 키가 비었잖아;;");
+
+            return key;
         }
 
         private static object? GetArrayElement(object?[] array, int index)

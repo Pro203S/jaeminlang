@@ -1,4 +1,4 @@
-using System.Text;
+using jaeminlang.Mode;
 using static jaeminlang.Utils;
 
 namespace jaeminlang
@@ -20,6 +20,7 @@ namespace jaeminlang
 
         public void Run()
         {
+            ModeManager.Reset();
             Variables.Reset();
             Functions.Reset();
             RegisteredFiles.Clear();
@@ -109,10 +110,7 @@ namespace jaeminlang
                 }
                 catch (Exception e)
                 {
-                    Stream stderr = Console.OpenStandardError();
-                    stderr.Write(Encoding.UTF8.GetBytes($"[{_filepath}] {i + 1}번째 줄: {e.Message}\r\n"));
-                    stderr.Write(Encoding.UTF8.GetBytes(e.StackTrace + "\r\n"));
-
+                    HandleError(e, $"[{_filepath}] {i + 1}번째 줄");
                     Environment.Exit(1);
                 }
             }
