@@ -4,7 +4,7 @@ using static jaeminlang.Utils;
 namespace jaeminlang
 {
     public class JMLParser
-    {   
+    {
         private static readonly HashSet<string> RegisteredFiles = new(
             OperatingSystem.IsWindows() ? StringComparer.OrdinalIgnoreCase : StringComparer.Ordinal);
 
@@ -40,7 +40,7 @@ namespace jaeminlang
                 if (ShouldSkipLine(line))
                     continue;
 
-                string[] args = Utils.GetArguments(line);
+                string[] args = GetArguments(line);
                 if (args.Length == 0)
                     continue;
 

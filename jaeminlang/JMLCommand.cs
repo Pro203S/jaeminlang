@@ -270,5 +270,10 @@ namespace jaeminlang
         {
             Environment.Exit(0);
         }
+
+        private void ExecuteSetMode()
+        {
+            
+        }
     }
 }
