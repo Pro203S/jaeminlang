@@ -1,5 +1,4 @@
 using System.Text;
-using jaeminlang;
 using static jaeminlang.Utils;
 
 namespace jaeminlang.Mode
@@ -24,6 +23,45 @@ namespace jaeminlang.Mode
             this.invokeFunction = invokeFunction;
             this.functionExists = functionExists;
             this.importLibrary = importLibrary;
+        }
+
+        public void Execute(string cmdName)
+        {
+            switch (cmdName)
+            {
+                case "안산":
+                    ExecuteOutput();
+                    return;
+                case "재민":
+                    ExecuteInput();
+                    return;
+                case "그램":
+                    ExecuteVariable();
+                    return;
+                case "러스트":
+                    ExecuteRepeat();
+                    return;
+                case "엘릭서":
+                    ExecuteFunctionCall();
+                    return;
+                case "음...":
+                    ExecuteReturn();
+                    return;
+                case "팝콘":
+                    ExecuteImport();
+                    return;
+                case "콜라":
+                    ExecuteLogicalOperate();
+                    return;
+                case "샤갈":
+                    ExecuteNot();
+                    return;
+                case "해선":
+                    ExecuteTerminate();
+                    return;
+                default:
+                    throw new ArgumentException("아니 " + cmdName + "은(는) 안산에도 없는 명령언데;;");
+            }
         }
 
         public void ExecuteOutput()
