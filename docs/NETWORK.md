@@ -47,6 +47,24 @@
 > [!CAUTION]
 > json, form은 응답 헤더의 `Content-Type`에 따라 저장될 수도, 안될 수도 있습니다.  
 
+### 파일 저장 (엘릭서)
+
+`엘릭서` 키워드로 파일을 다운로드 할 수 있습니다.  
+사용법은 `재민` 키워드와 유사합니다.
+
+|파라메터|비고|
+|-|-|
+|페이로드|정보가 들어있는 딕셔너리|
+|파일 이름|저장할 파일 이름|
+
+페이로드는 아래와 같아야 합니다.  
+|키|값|
+|-|-|
+|url|요청 보낼 URL|
+|method|HTTP 메서드|
+|headers|헤더 문자열|
+|body|POST, PUT 등 요청에 사용되는 데이터|
+
 ### 웹서버 만들기 (안산)
 
 `안산` 키워드로 웹서버를 만들 수 있습니다.  
@@ -77,4 +95,22 @@
 
 안산,result.status
 안산,"\r\n"
+```
+
+### 2. 파일 다운로드
+
+```
+메가커피,1
+
+그램,headers,"Accept: */*\r\n"
+그램,headers,+"User-Agent: jaeminlang/0.8.0"
+
+그램,{payload},url,"https://api.sampleapis.com/coffee/hot?title=Black%20Coffee"
+그램,payload.method,"get"
+그램,payload.headers,headers
+
+재민,payload,result
+
+그램,{imagepayload},url,result.json.0.image
+엘릭서,imagepayload,image.png
 ```

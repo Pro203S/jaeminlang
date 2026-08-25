@@ -1,6 +1,5 @@
 using System.Diagnostics;
 using System.Text;
-using static jaeminlang.Utils;
 
 namespace jaeminlang.Mode
 {
@@ -35,6 +34,9 @@ namespace jaeminlang.Mode
                 case "재민":
                     ExecuteRequest();
                     return true;
+                case "엘릭서":
+                    ExecuteDownload();
+                    return true;
                 default:
                     return false;
             }
@@ -48,18 +50,18 @@ namespace jaeminlang.Mode
         private async Task ExecuteRequestAsync()
         {
             if (args.Length < 3 || string.IsNullOrWhiteSpace(args[1]) || string.IsNullOrWhiteSpace(args[2]))
-                throw new ArgumentException("재민에 페이로드와 결과 변수명을 둘 다 줘야지;;");
+                throw new ArgumentException("아니 인수 똑바로 안써??");
 
             string payloadName = args[1];
             string resultName = args[2];
             object? rawPayload = Utils.ResolveAssignableValue(payloadName);
 
             if (rawPayload is not Dictionary<string, object?> payload)
-                throw new InvalidCastException(payloadName + "은(는) 딕셔너리가 아니잖아;;");
+                throw new InvalidCastException("니 눈엔 이게 딕셔너리냐?;;");
 
-            string url = GetRequiredString(payload, "url", "요청 보낼 URL은 있어야지;;");
-            string method = GetOptionalString(payload, "method") ?? "GET";
-            List<KeyValuePair<string, string>> headers = GetRequestHeaders(payload);
+            string url = Utils.GetRequiredString(payload, "url", "아니 요청 보낼 URL은 있어야지;;");
+            string method = Utils.GetOptionalString(payload, "method") ?? "GET";
+            List<KeyValuePair<string, string>> headers = Utils.GetRequestHeaders(payload);
             string? contentType = headers
                 .FirstOrDefault(header => header.Key.Equals("Content-Type", StringComparison.OrdinalIgnoreCase))
                 .Value;
@@ -68,11 +70,11 @@ namespace jaeminlang.Mode
 
             if (payload.TryGetValue("body", out object? requestBody) && requestBody != null)
             {
-                string body = SerializeRequestBody(requestBody, GetMediaType(contentType));
+                string body = Utils.SerializeRequestBody(requestBody, Utils.GetMediaType(contentType));
                 message.Content = new StringContent(body, Encoding.UTF8);
             }
 
-            ApplyRequestHeaders(message, headers);
+            Utils.ApplyRequestHeaders(message, headers);
 
             Stopwatch stopwatch = Stopwatch.StartNew();
             using HttpResponseMessage response = await Client.SendAsync(message);
@@ -83,19 +85,73 @@ namespace jaeminlang.Mode
             {
                 ["status"] = (double)(int)response.StatusCode,
                 ["time"] = stopwatch.Elapsed.TotalMilliseconds,
-                ["headers"] = GetResponseHeaders(response),
+                ["headers"] = Utils.GetResponseHeaders(response),
                 ["text"] = responseText
             };
 
             string? responseMediaType = response.Content.Headers.ContentType?.MediaType;
-            if (IsJsonMediaType(responseMediaType) && TryParseJson(responseText, out object? json))
+            if (Utils.IsJsonMediaType(responseMediaType) && Utils.TryParseJson(responseText, out object? json))
                 result["json"] = json;
 
-            if (IsFormMediaType(responseMediaType))
-                result["form"] = ParseForm(responseText);
+            if (Utils.IsFormMediaType(responseMediaType))
+                result["form"] = Utils.ParseForm(responseText);
 
             Variables.SetValue(resultName, result);
         }
 
+        public void ExecuteDownload()
+        {
+            ExecuteDownloadAsync().GetAwaiter().GetResult();
+        }
+
+        private async Task ExecuteDownloadAsync()
+        {
+            if (args.Length < 3 || string.IsNullOrWhiteSpace(args[1]) || string.IsNullOrWhiteSpace(args[2]))
+                throw new ArgumentException("아니 인수 똑바로 안써??");
+
+            string payloadName = args[1];
+            string filePath = Utils.IsStringLiteral(args[2]) ? args[2][1..^1] : args[2];
+            object? rawPayload = Utils.ResolveAssignableValue(payloadName);
+
+            if (string.IsNullOrWhiteSpace(filePath))
+                throw new ArgumentException("아니 저장할 파일 이름은 있어야지;;");
+
+            if (rawPayload is not Dictionary<string, object?> payload)
+                throw new InvalidCastException("니 눈엔 이게 딕셔너리냐?;;");
+
+            string url = Utils.GetRequiredString(payload, "url", "아니 요청 보낼 URL은 있어야지;;");
+            string method = Utils.GetOptionalString(payload, "method") ?? "GET";
+            List<KeyValuePair<string, string>> headers = Utils.GetRequestHeaders(payload);
+            string? contentType = headers
+                .FirstOrDefault(header => header.Key.Equals("Content-Type", StringComparison.OrdinalIgnoreCase))
+                .Value;
+
+            using HttpRequestMessage message = new(new HttpMethod(method), url);
+
+            if (payload.TryGetValue("body", out object? requestBody) && requestBody != null)
+            {
+                string body = Utils.SerializeRequestBody(requestBody, Utils.GetMediaType(contentType));
+                message.Content = new StringContent(body, Encoding.UTF8);
+            }
+
+            Utils.ApplyRequestHeaders(message, headers);
+
+            using HttpResponseMessage response = await Client.SendAsync(
+                message,
+                HttpCompletionOption.ResponseHeadersRead);
+            response.EnsureSuccessStatusCode();
+
+            await using Stream source = await response.Content.ReadAsStreamAsync();
+            await using FileStream destination = new(
+                filePath,
+                FileMode.Create,
+                FileAccess.Write,
+                FileShare.None,
+                bufferSize: 81920,
+                useAsync: true);
+            await source.CopyToAsync(destination);
+        }
+    
+        
     }
 }

@@ -58,7 +58,7 @@ namespace jaeminlang
                     continue;
                 }
 
-                if (args[0] != "엘릭서")
+                if (args[0] != "엘릭서" || declaredMode == ExecutionMode.Network)
                     continue;
 
                 if (args.Length < 2)
