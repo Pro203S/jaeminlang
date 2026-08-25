@@ -1,7 +1,7 @@
 # jaeminlang
 
 재민랭은 한국어와 그 외 기호로 코딩할 수 있는 ~~난해한~~ 프로그래밍 언어입니다.  
-난해한 프로그래밍 언어 치고는 높은 가독성과, 의외의 생산성이 존재합니다.  
+또한 난해한 프로그래밍 언어 치고는 높은 가독성과, 의외의 생산성을 제공합니다.  
 
 ## 실행
 
@@ -55,10 +55,10 @@ jaeminlang.exe .\source.jml
 
 문자열을 입력할때는 `"`로 열고 닫습니다.  
 
-> [!IMPORTANT]
-> , 문자를 입력할때에는 이스케이프 해야합니다.
+> [!NOTE]
+> 문자열 안의 `,`는 구분자로 처리되지 않습니다.
 
-예시: `안산,"\,300"`
+예시: `안산,"1,300"`
 
 ## 키워드 사용법
 
@@ -310,7 +310,7 @@ jml 파일을 불러오고 그 jml 파일에 있는 **모든 함수**를 가져�
 그램,headers,"Accept: */*\r\n"
 그램,headers,+"User-Agent: jaeminlang/0.8.0"
 
-그램,{payload},url,https://api.sampleapis.com/coffee/hot?title=Black%20Coffee
+그램,{payload},url,"https://api.sampleapis.com/coffee/hot?title=Black%20Coffee"
 그램,payload.method,"get"
 그램,payload.headers,headers
 
@@ -484,6 +484,11 @@ by. [holy0unjinx](https://github.com/holy0unjinx)
 
 
 ## 업데이트 로그
+
+### v0.8.0
+
+- [네트워크 모드 추가](./docs/NETWORK.md)
+- [딕셔너리](#딕셔너리) 추가
 
 ### v0.7.0
 

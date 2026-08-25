@@ -10,10 +10,10 @@
 |키워드|기능|
 |-----|-----|
 |재민|HTTP 요청 보내기|
+|엘릭서|파일 저장|
 |안산|웹서버 만들기|
 |팝콘|엔드포인트 등록|
 |콜라|정적 파일 서빙|
-|엘릭서|파일 저장|
 
 ## 코드 작성법
 
@@ -38,8 +38,14 @@
 |키|값|
 |-|-|
 |status|숫자값|
+|time|걸린 시간|
+|headers|헤더 딕셔너리|
 |json|응답의 딕셔너리 또는 배열|
+|form|응답의 formBody 딕셔너리|
+|text|응답의 raw text|
 
+> [!CAUTION]
+> json, form은 응답 헤더의 `Content-Type`에 따라 저장될 수도, 안될 수도 있습니다.  
 
 ### 웹서버 만들기 (안산)
 
@@ -61,7 +67,7 @@
 그램,headers,"Accept: */*\r\n"
 그램,headers,+"User-Agent: jaeminlang/0.8.0"
 
-그램,{payload},url,https://api.sampleapis.com/coffee/hot?title=Black%20Coffee
+그램,{payload},url,"https://api.sampleapis.com/coffee/hot?title=Black%20Coffee"
 그램,payload.method,"get"
 그램,payload.headers,headers
 
@@ -71,9 +77,4 @@
 
 안산,result.status
 안산,"\r\n"
-안산,result.body
-안산,"\r\n"
-안산,result.time
-안산,"\r\n"
-안산,result.header
 ```
