@@ -68,12 +68,69 @@
 ### 웹서버 만들기 (안산)
 
 `안산` 키워드로 웹서버를 만들 수 있습니다.  
+서버는 로컬 주소(`127.0.0.1`)에서 실행되며, 프로그램은 서버를 계속 실행하기 위해 종료되지 않습니다.
 
 |파라메터|비고|
 |-|-|
 |웹서버 이름|웹서버의 이름|
+|포트|선택, 기본값은 8080|
 
 웹서버를 선언 후, 다른 키워드로 엔드포인트를 등록할 수 있습니다.  
+
+### 엔드포인트 등록 (팝콘)
+
+`팝콘` 키워드로 재민랭 함수를 HTTP 엔드포인트에 연결할 수 있습니다.
+
+|파라메터|비고|
+|-|-|
+|웹서버 이름|`안산`으로 만든 서버 이름|
+|HTTP 메서드|`GET`, `POST` 등의 메서드, 모든 메서드는 `*`|
+|경로|`/hello` 형식의 URL 경로. `{name}`과 `{*name}` 지원|
+|함수 이름|요청 딕셔너리를 하나 받고 응답 딕셔너리를 하나 반환하는 함수|
+
+요청 딕셔너리는 아래 값을 포함합니다.
+
+|키|값|
+|-|-|
+|method|HTTP 메서드|
+|path|요청 경로|
+|params|동적 경로 파라미터 딕셔너리|
+|query|쿼리 문자열 딕셔너리|
+|headers|요청 헤더 딕셔너리|
+|text|요청 본문 원문|
+|json|JSON 요청 본문, Content-Type이 JSON일 때만 저장|
+|form|form 요청 본문, Content-Type이 form일 때만 저장|
+|remoteAddress|클라이언트 IP 주소|
+
+동적 경로는 한 경로 조각을 받는 `{name}`과 남은 경로 전체를 받는 `{*name}`을 지원합니다.
+
+```jml
+팝콘,app,"GET","/users/{id}",getUser
+팝콘,app,"GET","/files/{*path}",getFile
+```
+
+`/users/42` 요청에서는 `request.params.id`가 `42`가 되고, `/files/images/logo.png` 요청에서는 `request.params.path`가 `images/logo.png`가 됩니다. 정확한 리터럴 경로가 동적 경로보다 우선하며, 일반 경로 파라미터가 catch-all보다 우선합니다.
+
+함수에서 반환하는 응답 딕셔너리는 아래 값을 사용할 수 있습니다.
+
+|키|값|
+|-|-|
+|status|HTTP 상태 코드, 기본값은 200|
+|headers|응답 헤더 딕셔너리|
+|contentType|응답 Content-Type|
+|text|문자열 응답 본문|
+|json|JSON 응답으로 직렬화할 값|
+|body|문자열 또는 JSON으로 직렬화할 값|
+
+### 정적 파일 서빙 (콜라)
+
+`콜라` 키워드로 파일 또는 디렉터리를 URL 경로에 연결할 수 있습니다. 디렉터리 경로는 하위 파일을 제공하며, 디렉터리 자체를 요청하면 `index.html`을 찾습니다.
+
+|파라메터|비고|
+|-|-|
+|웹서버 이름|`안산`으로 만든 서버 이름|
+|URL 경로|정적 파일을 제공할 경로|
+|파일 경로|파일 또는 디렉터리 경로|
 
 ## 예제
 
@@ -97,7 +154,37 @@
 안산,"\r\n"
 ```
 
-### 2. 파일 다운로드
+### 2. 웹서버
+
+```jml
+엘릭서,hello,request
+그램,{body},message,"Hello World"
+그램,{response},status,200
+그램,response.json,body
+음...,response
+
+엘릭서,getUser,request
+그램,{body},id,request.params.id
+그램,{response},status,200
+그램,response.json,body
+음...,response
+
+메가커피,1
+
+안산,app,8080
+팝콘,app,"GET","/hello",hello
+팝콘,app,"GET","/users/{id}",getUser
+콜라,app,"/assets","./public"
+```
+
+위 코드를 실행한 뒤 아래 주소로 요청하면 JSON 응답을 받을 수 있습니다.
+
+- `http://127.0.0.1:8080/hello` → `{"message":"Hello World"}`
+- `http://127.0.0.1:8080/users/42` → `{"id":"42"}`
+
+서버는 `Ctrl+C`로 종료합니다.
+
+### 3. 파일 다운로드
 
 ```
 메가커피,1

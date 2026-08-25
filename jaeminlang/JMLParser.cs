@@ -52,7 +52,7 @@ namespace jaeminlang
                     continue;
                 }
 
-                if (args[0] == "팝콘")
+                if (args[0] == "팝콘" && declaredMode != ExecutionMode.Network)
                 {
                     ImportLibrary(args.Length > 1 ? args[1] : throw new NullReferenceException("파일 경로는 있어야지;;"));
                     continue;
@@ -105,7 +105,8 @@ namespace jaeminlang
                         }),
                         InvokeFunction,
                         Functions.Contains,
-                        ImportLibrary);
+                        ImportLibrary,
+                        InvokeFunctionValues);
                     cmd.Execute();
                 }
                 catch (JMLReturnSignal) when (allowReturn)
@@ -115,6 +116,10 @@ namespace jaeminlang
                 catch (JMLReturnSignal)
                 {
                     throw new InvalidOperationException("여기서 음... 쓰면 어떡해;;");
+                }
+                catch (Exception e) when (allowReturn)
+                {
+                    throw new InvalidOperationException($"[{_filepath}] {i + 1}번째 줄: {e.Message}", e);
                 }
                 catch (Exception e)
                 {
@@ -130,12 +135,26 @@ namespace jaeminlang
             return function.owner.InvokeRegisteredFunction(name, function, rawArgs);
         }
 
+        private object?[] InvokeFunctionValues(string name, object?[] args)
+        {
+            Function function = Functions.GetRequired(name);
+            return function.owner.InvokeRegisteredFunctionValues(name, function, args);
+        }
+
         private object?[] InvokeRegisteredFunction(string name, Function function, string[] rawArgs)
         {
             if (function.parameters.Length != rawArgs.Length)
                 throw new ArgumentException(name + " 함수 인수 개수가 안맞잖아;;");
 
             object?[] resolvedArgs = rawArgs.Select(Utils.ResolveAssignableValue).ToArray();
+            return InvokeRegisteredFunctionValues(name, function, resolvedArgs);
+        }
+
+        private object?[] InvokeRegisteredFunctionValues(string name, Function function, object?[] resolvedArgs)
+        {
+            if (function.parameters.Length != resolvedArgs.Length)
+                throw new ArgumentException(name + " 함수 인수 개수가 안맞잖아;;");
+
             ExecutionMode functionMode = function.executionMode ?? ModeManager.Current;
 
             using (ModeManager.EnterMode(functionMode))

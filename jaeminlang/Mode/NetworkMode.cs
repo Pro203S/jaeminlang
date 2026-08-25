@@ -12,19 +12,22 @@ namespace jaeminlang.Mode
         private readonly Func<string, string[], object?[]>? invokeFunction;
         private readonly Func<string, bool>? functionExists;
         private readonly Action<string>? importLibrary;
+        private readonly Func<string, object?[], object?[]>? invokeFunctionValues;
 
         public NetworkMode(
             string[] args,
             Action<int>? repeat,
             Func<string, string[], object?[]>? invokeFunction,
             Func<string, bool>? functionExists,
-            Action<string>? importLibrary)
+            Action<string>? importLibrary,
+            Func<string, object?[], object?[]>? invokeFunctionValues)
         {
             this.args = args;
             this.repeat = repeat;
             this.invokeFunction = invokeFunction;
             this.functionExists = functionExists;
             this.importLibrary = importLibrary;
+            this.invokeFunctionValues = invokeFunctionValues;
         }
 
         public bool Execute(string cmdName)
@@ -36,6 +39,15 @@ namespace jaeminlang.Mode
                     return true;
                 case "엘릭서":
                     ExecuteDownload();
+                    return true;
+                case "안산":
+                    ExecuteServer();
+                    return true;
+                case "팝콘":
+                    ExecuteEndpoint();
+                    return true;
+                case "콜라":
+                    ExecuteStaticFile();
                     return true;
                 default:
                     return false;
@@ -151,7 +163,73 @@ namespace jaeminlang.Mode
                 useAsync: true);
             await source.CopyToAsync(destination);
         }
-    
-        
+
+        public void ExecuteServer()
+        {
+            if (args.Length < 2 || args.Length > 3 || string.IsNullOrWhiteSpace(args[1]))
+                throw new ArgumentException("안산에는 웹서버 이름과 포트만 줘야지;;");
+
+            string serverName = Utils.ResolveTextToken(args[1]);
+            if (string.IsNullOrWhiteSpace(serverName))
+                throw new ArgumentException("웹서버 이름이 비었잖아;;");
+
+            int port = 8080;
+
+            if (args.Length == 3)
+            {
+                double rawPort = Utils.ResolveNumberValue(args[2]);
+                if (!double.IsFinite(rawPort) || rawPort != Math.Truncate(rawPort) || rawPort < 1 || rawPort > 65535)
+                    throw new ArgumentException("웹서버 포트가 이상하잖아;;");
+
+                port = (int)rawPort;
+            }
+
+            WebServerManager.Create(serverName, port);
+        }
+
+        public void ExecuteEndpoint()
+        {
+            if (args.Length != 5)
+                throw new ArgumentException("팝콘에는 웹서버, 메서드, 경로, 함수를 줘야지;;");
+
+            string serverName = Utils.ResolveTextToken(args[1]);
+            string method = Utils.ResolveTextToken(args[2]);
+            string path = Utils.ResolveTextToken(args[3]);
+            string handlerName = args[4];
+
+            if (string.IsNullOrWhiteSpace(serverName))
+                throw new ArgumentException("웹서버 이름이 비었잖아;;");
+
+            if (functionExists == null || !functionExists(handlerName))
+                throw new ArgumentNullException(handlerName + " 함수가 정의가 안됐잖아;;");
+
+            if (invokeFunctionValues == null)
+                throw new InvalidOperationException("엔드포인트 함수를 실행할 수가 없잖아;;");
+
+            WebServerManager.RegisterEndpoint(serverName, method, path, request =>
+            {
+                object?[] returned = invokeFunctionValues(handlerName, [request]);
+                if (returned.Length != 1 || returned[0] is not Dictionary<string, object?> response)
+                    throw new InvalidOperationException(handlerName + " 함수는 응답 딕셔너리 하나를 반환해야지;;");
+
+                return response;
+            });
+        }
+
+        public void ExecuteStaticFile()
+        {
+            if (args.Length != 4)
+                throw new ArgumentException("콜라에는 웹서버, 경로, 파일을 줘야지;;");
+
+            string serverName = Utils.ResolveTextToken(args[1]);
+            string route = Utils.ResolveTextToken(args[2]);
+            string filePath = Utils.ResolveTextToken(args[3]);
+
+            if (string.IsNullOrWhiteSpace(serverName))
+                throw new ArgumentException("웹서버 이름이 비었잖아;;");
+
+            WebServerManager.RegisterStaticFile(serverName, route, filePath);
+        }
+
     }
 }

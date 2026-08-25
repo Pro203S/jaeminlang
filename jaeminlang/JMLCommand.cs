@@ -16,13 +16,20 @@ namespace jaeminlang.Mode
             Action<int>? repeat,
             Func<string, string[], object?[]>? invokeFunction = null,
             Func<string, bool>? functionExists = null,
-            Action<string>? importLibrary = null)
+            Action<string>? importLibrary = null,
+            Func<string, object?[], object?[]>? invokeFunctionValues = null)
         {
             rawCmd = raw;
             args = GetArguments(raw);
             cmdName = args.Length == 0 ? "" : args[0];
             defaultMode = new DefaultMode(args, repeat, invokeFunction, functionExists, importLibrary);
-            networkMode = new NetworkMode(args, repeat, invokeFunction, functionExists, importLibrary);
+            networkMode = new NetworkMode(
+                args,
+                repeat,
+                invokeFunction,
+                functionExists,
+                importLibrary,
+                invokeFunctionValues);
         }
 
         public void Execute()

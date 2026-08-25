@@ -64,6 +64,7 @@ namespace jaeminlang.Mode
 
         public static void Reset()
         {
+            WebServerManager.Reset();
             CurrentMode.Value = ExecutionMode.Default;
         }
 

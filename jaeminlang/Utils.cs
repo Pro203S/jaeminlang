@@ -503,6 +503,18 @@ namespace jaeminlang
                 ?? throw new InvalidCastException(key + " 값은 문자열이어야 하잖아;;");
         }
 
+        public static string ResolveTextToken(string token)
+        {
+            if (IsStringLiteral(token))
+                return token[1..^1];
+
+            if (!Variables.TryGetValue(token, out object? value))
+                return token;
+
+            return value as string
+                ?? throw new InvalidCastException(token + " 값은 문자열이어야 하잖아;;");
+        }
+
         public static List<KeyValuePair<string, string>> GetRequestHeaders(
             IReadOnlyDictionary<string, object?> payload)
         {
