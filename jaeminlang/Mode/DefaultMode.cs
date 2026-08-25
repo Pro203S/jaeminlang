@@ -25,42 +25,42 @@ namespace jaeminlang.Mode
             this.importLibrary = importLibrary;
         }
 
-        public void Execute(string cmdName)
+        public bool Execute(string cmdName)
         {
             switch (cmdName)
             {
                 case "안산":
                     ExecuteOutput();
-                    return;
+                    return true;
                 case "재민":
                     ExecuteInput();
-                    return;
+                    return true;
                 case "그램":
                     ExecuteVariable();
-                    return;
+                    return true;
                 case "러스트":
                     ExecuteRepeat();
-                    return;
+                    return true;
                 case "엘릭서":
                     ExecuteFunctionCall();
-                    return;
+                    return true;
                 case "음...":
                     ExecuteReturn();
-                    return;
+                    return true;
                 case "팝콘":
                     ExecuteImport();
-                    return;
+                    return true;
                 case "콜라":
                     ExecuteLogicalOperate();
-                    return;
+                    return true;
                 case "샤갈":
                     ExecuteNot();
-                    return;
+                    return true;
                 case "해선":
                     ExecuteTerminate();
-                    return;
+                    return true;
                 default:
-                    throw new ArgumentException("아니 " + cmdName + "은(는) 안산에도 없는 명령언데;;");
+                    return false;
             }
         }
 
@@ -107,13 +107,6 @@ namespace jaeminlang.Mode
             if (key.StartsWith('[') && key.EndsWith(']'))
             {
                 SetArrayValue(key[1..^1], valueTokens);
-                return;
-            }
-
-            if (key.Contains('.'))
-            {
-                object? value = ResolveSingleValue(valueTokens, functionExists, invokeFunction);
-                SetCollectionItemValue(key, value);
                 return;
             }
 
@@ -166,6 +159,13 @@ namespace jaeminlang.Mode
                     default:
                         throw new ArgumentException("이런 수식은 안산에도 없어;;");
                 }
+                return;
+            }
+
+            if (key.Contains('.'))
+            {
+                object? value = ResolveSingleValue(valueTokens, functionExists, invokeFunction);
+                SetCollectionItemValue(key, value);
                 return;
             }
 

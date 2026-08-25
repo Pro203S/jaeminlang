@@ -39,13 +39,15 @@ namespace jaeminlang.Mode
 
             switch (ModeManager.Current)
             {
-                case ExecutionMode.Default:
-                    defaultMode.Execute(cmdName);
-                    return;
                 case ExecutionMode.Network:
-                    networkMode.Execute(cmdName);
-                    return;
+                    if (networkMode.Execute(cmdName)) return;
+                    break;
+                
             }
+
+            if (defaultMode.Execute(cmdName)) return;
+
+            throw new ArgumentException("아니 " + cmdName + "은(는) 안산에도 없는 명령언데;;");
         }
     }
 }

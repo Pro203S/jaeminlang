@@ -10,7 +10,6 @@
 |키워드|기능|
 |-----|-----|
 |재민|HTTP 요청 보내기|
-|러스트|HTTPS 요청 보내기|
 |안산|웹서버 만들기|
 |팝콘|엔드포인트 등록|
 |콜라|정적 파일 서빙|
@@ -18,31 +17,29 @@
 
 ## 코드 작성법
 
-### HTTP 요청 보내기 (재민)
+### 요청 보내기 (재민)
 
-`재민` 키워드로 HTTP 요청을 보낼 수 있습니다.  
-
-|파라메터|비고|
-|-|-|
-|호스트이름|요청을 보낼 호스트 이름|
-|포트번호|요청을 보낼 호스트의 포트 번호|
-|페이로드|HTTP 요청 페이로드|
-|결과|결과를 저장할 변수 이름|
-
-예제 코드는 아래 [HTTP 요청](#1-http-요청) 참조
-
-### HTTPS 요청 보내기 (러스트)
-
-`러스트` 키워드로 HTTPS 요청을 보낼 수 있습니다.  
+`재민` 키워드로 요청을 보낼 수 있습니다.  
 
 |파라메터|비고|
 |-|-|
-|호스트이름|요청을 보낼 호스트 이름|
-|포트번호|요청을 보낼 호스트의 포트 번호|
-|페이로드|HTTP 요청 페이로드|
-|결과|결과를 저장할 변수 이름|
+|페이로드|정보가 들어있는 딕셔너리|
+|결과 변수명|결과를 저장할 변수명|
 
-예제 코드는 아래 [HTTPS 요청](#2-https-요청) 참조
+페이로드는 아래와 같아야 합니다.  
+|키|값|
+|-|-|
+|url|요청 보낼 URL|
+|method|HTTP 메서드|
+|headers|헤더 문자열|
+|body|POST, PUT 등 요청에 사용되는 데이터|
+
+결과는 아래와 같이 저장됩니다.  
+|키|값|
+|-|-|
+|status|숫자값|
+|json|응답의 딕셔너리 또는 배열|
+
 
 ### 웹서버 만들기 (안산)
 
@@ -61,39 +58,14 @@
 ```
 메가커피,1
 
-그램,payload,"GET / HTTP/1.1\r\n"
-그램,payload,+"Host: localhost\r\n"
-그램,payload,+"Accept: */*\r\n"
-그램,payload,+"Connection: close\r\n"
-그램,payload,+"User-Agent: jaeminlang/0.8.0\r\n"
-그램,payload,+"\r\n"
+그램,headers,"Accept: */*\r\n"
+그램,headers,+"User-Agent: jaeminlang/0.8.0"
 
-재민,"localhost",8080,payload,result
+그램,{payload},url,https://api.sampleapis.com/coffee/hot?title=Black%20Coffee
+그램,payload.method,"get"
+그램,payload.headers,headers
 
-메가커피,0
-
-안산,result.status
-안산,"\r\n"
-안산,result.body
-안산,"\r\n"
-안산,result.time
-안산,"\r\n"
-안산,result.header
-```
-
-### 2. HTTPS 요청
-
-```
-메가커피,1
-
-그램,payload,"GET / HTTP/1.1\r\n"
-그램,payload,+"Host: google.com\r\n"
-그램,payload,+"Accept: */*\r\n"
-그램,payload,+"Connection: close\r\n"
-그램,payload,+"User-Agent: jaeminlang/0.8.0\r\n"
-그램,payload,+"\r\n"
-
-러스트,"google.com",443,payload,result
+재민,payload,result
 
 메가커피,0
 
