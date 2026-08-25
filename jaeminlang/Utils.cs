@@ -30,6 +30,7 @@ namespace jaeminlang
             List<char> buffer = [];
 
             bool isEscaped = false;
+            bool isInsideString = false;
 
             foreach (char c in raw)
             {
@@ -51,13 +52,20 @@ namespace jaeminlang
                     continue;
                 }
 
+                if (c == '"')
+                {
+                    isInsideString = !isInsideString;
+                    buffer.Add(c);
+                    continue;
+                }
+
                 if (c == '\\')
                 {
                     isEscaped = true;
                     continue;
                 }
 
-                if (c == ',')
+                if (c == ',' && !isInsideString)
                 {
                     result.Add(new string([.. buffer]));
                     buffer.Clear();
