@@ -1,11 +1,13 @@
 using System.Globalization;
+using jaeminlang.Utils;
 
 namespace jaeminlang.Mode
 {
     public enum ExecutionMode
     {
         Default = 0,
-        Network = 1
+        Network = 1,
+        FileIO = 2
     }
 
     public static class ModeManager
@@ -30,7 +32,7 @@ namespace jaeminlang.Mode
             if (args.Length > 2)
                 throw new ArgumentException("메가커피에 모드는 하나만 줘야지;;");
 
-            double rawMode = Utils.ResolveNumberValue(args[1]);
+            double rawMode = VarUtils.ResolveNumberValue(args[1]);
             if (!double.IsFinite(rawMode) || rawMode != Math.Truncate(rawMode) || rawMode < int.MinValue || rawMode > int.MaxValue)
                 throw new ArgumentException("메가커피 모드는 정수여야지;;");
 

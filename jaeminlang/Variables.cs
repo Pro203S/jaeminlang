@@ -1,3 +1,5 @@
+using jaeminlang.Utils;
+
 namespace jaeminlang
 {
     public static class Variables
@@ -30,12 +32,12 @@ namespace jaeminlang
 
         public static bool ContainsKey(string key)
         {
-            return Utils.FindScope(scopes, key) != null;
+            return Scope.FindScope(scopes, key) != null;
         }
 
         public static void SetValue(string key, object? value)
         {
-            Dictionary<string, object?> targetScope = Utils.FindScope(scopes, key) ?? scopes[^1];
+            Dictionary<string, object?> targetScope = Scope.FindScope(scopes, key) ?? scopes[^1];
             targetScope[key] = value;
         }
 

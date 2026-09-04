@@ -2,7 +2,7 @@ using System.Net;
 using System.Text;
 using System.Text.Json;
 
-namespace jaeminlang.Mode
+namespace jaeminlang
 {
     internal static class WebServerManager
     {

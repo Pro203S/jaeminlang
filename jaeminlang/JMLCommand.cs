@@ -1,4 +1,4 @@
-using static jaeminlang.Utils;
+using jaeminlang.Utils;
 
 namespace jaeminlang.Mode
 {
@@ -20,7 +20,7 @@ namespace jaeminlang.Mode
             Func<string, object?[], object?[]>? invokeFunctionValues = null)
         {
             rawCmd = raw;
-            args = GetArguments(raw);
+            args = Parse.GetArguments(raw);
             cmdName = args.Length == 0 ? "" : args[0];
             defaultMode = new DefaultMode(args, repeat, invokeFunction, functionExists, importLibrary);
             networkMode = new NetworkMode(
@@ -49,7 +49,9 @@ namespace jaeminlang.Mode
                 case ExecutionMode.Network:
                     if (networkMode.Execute(cmdName)) return;
                     break;
-                
+                case ExecutionMode.FileIO:
+                    if (networkMode.Execute(cmdName)) return;
+                    break;
             }
 
             if (defaultMode.Execute(cmdName)) return;

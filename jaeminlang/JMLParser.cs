@@ -1,5 +1,5 @@
 using jaeminlang.Mode;
-using static jaeminlang.Utils;
+using jaeminlang.Utils;
 
 namespace jaeminlang
 {
@@ -39,10 +39,10 @@ namespace jaeminlang
             for (int i = 0; i < _fileContent.Length; i++)
             {
                 string line = _fileContent[i];
-                if (ShouldSkipLine(line))
+                if (Parse.ShouldSkipLine(line))
                     continue;
 
-                string[] args = GetArguments(line);
+                string[] args = Parse.GetArguments(line);
                 if (args.Length == 0)
                     continue;
 
@@ -67,7 +67,7 @@ namespace jaeminlang
                 if (Functions.Contains(args[1]))
                     continue;
 
-                int returnLine = FindFunctionReturnLine(_fileContent, i + 1);
+                int returnLine = Parse.FindFunctionReturnLine(_fileContent, i + 1);
                 Functions.SetValue(args[1], new Function
                 {
                     owner = this,
@@ -88,7 +88,7 @@ namespace jaeminlang
                 try
                 {
                     string line = _fileContent[i];
-                    if (ShouldSkipLine(line))
+                    if (Parse.ShouldSkipLine(line))
                         continue;
 
                     if (_functionBlocks.TryGetValue(i, out int functionEnd))
@@ -123,7 +123,7 @@ namespace jaeminlang
                 }
                 catch (Exception e)
                 {
-                    HandleError(e, $"[{_filepath}] {i + 1}번째 줄");
+                    Global.HandleError(e, $"[{_filepath}] {i + 1}번째 줄");
                     Environment.Exit(1);
                 }
             }
@@ -146,7 +146,7 @@ namespace jaeminlang
             if (function.parameters.Length != rawArgs.Length)
                 throw new ArgumentException(name + " 함수 인수 개수가 안맞잖아;;");
 
-            object?[] resolvedArgs = rawArgs.Select(Utils.ResolveAssignableValue).ToArray();
+            object?[] resolvedArgs = rawArgs.Select(VarUtils.ResolveAssignableValue).ToArray();
             return InvokeRegisteredFunctionValues(name, function, resolvedArgs);
         }
 
@@ -194,7 +194,7 @@ namespace jaeminlang
 
         private string ResolveImportPath(string rawPath)
         {
-            string path = IsStringLiteral(rawPath)
+            string path = TypeCheck.IsStringLiteral(rawPath)
                 ? rawPath[1..^1]
                 : rawPath;
 

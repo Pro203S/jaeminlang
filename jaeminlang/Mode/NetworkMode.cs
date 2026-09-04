@@ -1,5 +1,6 @@
 using System.Diagnostics;
 using System.Text;
+using jaeminlang.Utils;
 
 namespace jaeminlang.Mode
 {
@@ -66,14 +67,14 @@ namespace jaeminlang.Mode
 
             string payloadName = args[1];
             string resultName = args[2];
-            object? rawPayload = Utils.ResolveAssignableValue(payloadName);
+            object? rawPayload = VarUtils.ResolveAssignableValue(payloadName);
 
             if (rawPayload is not Dictionary<string, object?> payload)
                 throw new InvalidCastException("니 눈엔 이게 딕셔너리냐?;;");
 
-            string url = Utils.GetRequiredString(payload, "url", "아니 요청 보낼 URL은 있어야지;;");
-            string method = Utils.GetOptionalString(payload, "method") ?? "GET";
-            List<KeyValuePair<string, string>> headers = Utils.GetRequestHeaders(payload);
+            string url = NetworkUtils.GetRequiredString(payload, "url", "아니 요청 보낼 URL은 있어야지;;");
+            string method = NetworkUtils.GetOptionalString(payload, "method") ?? "GET";
+            List<KeyValuePair<string, string>> headers = NetworkUtils.GetRequestHeaders(payload);
             string? contentType = headers
                 .FirstOrDefault(header => header.Key.Equals("Content-Type", StringComparison.OrdinalIgnoreCase))
                 .Value;
@@ -82,11 +83,11 @@ namespace jaeminlang.Mode
 
             if (payload.TryGetValue("body", out object? requestBody) && requestBody != null)
             {
-                string body = Utils.SerializeRequestBody(requestBody, Utils.GetMediaType(contentType));
+                string body = NetworkUtils.SerializeRequestBody(requestBody, NetworkUtils.GetMediaType(contentType));
                 message.Content = new StringContent(body, Encoding.UTF8);
             }
 
-            Utils.ApplyRequestHeaders(message, headers);
+            NetworkUtils.ApplyRequestHeaders(message, headers);
 
             Stopwatch stopwatch = Stopwatch.StartNew();
             using HttpResponseMessage response = await Client.SendAsync(message);
@@ -97,16 +98,16 @@ namespace jaeminlang.Mode
             {
                 ["status"] = (double)(int)response.StatusCode,
                 ["time"] = stopwatch.Elapsed.TotalMilliseconds,
-                ["headers"] = Utils.GetResponseHeaders(response),
+                ["headers"] = NetworkUtils.GetResponseHeaders(response),
                 ["text"] = responseText
             };
 
             string? responseMediaType = response.Content.Headers.ContentType?.MediaType;
-            if (Utils.IsJsonMediaType(responseMediaType) && Utils.TryParseJson(responseText, out object? json))
+            if (NetworkUtils.IsJsonMediaType(responseMediaType) && NetworkUtils.TryParseJson(responseText, out object? json))
                 result["json"] = json;
 
-            if (Utils.IsFormMediaType(responseMediaType))
-                result["form"] = Utils.ParseForm(responseText);
+            if (NetworkUtils.IsFormMediaType(responseMediaType))
+                result["form"] = NetworkUtils.ParseForm(responseText);
 
             Variables.SetValue(resultName, result);
         }
@@ -122,8 +123,8 @@ namespace jaeminlang.Mode
                 throw new ArgumentException("아니 인수 똑바로 안써??");
 
             string payloadName = args[1];
-            string filePath = Utils.IsStringLiteral(args[2]) ? args[2][1..^1] : args[2];
-            object? rawPayload = Utils.ResolveAssignableValue(payloadName);
+            string filePath = TypeCheck.IsStringLiteral(args[2]) ? args[2][1..^1] : args[2];
+            object? rawPayload = VarUtils.ResolveAssignableValue(payloadName);
 
             if (string.IsNullOrWhiteSpace(filePath))
                 throw new ArgumentException("아니 저장할 파일 이름은 있어야지;;");
@@ -131,9 +132,9 @@ namespace jaeminlang.Mode
             if (rawPayload is not Dictionary<string, object?> payload)
                 throw new InvalidCastException("니 눈엔 이게 딕셔너리냐?;;");
 
-            string url = Utils.GetRequiredString(payload, "url", "아니 요청 보낼 URL은 있어야지;;");
-            string method = Utils.GetOptionalString(payload, "method") ?? "GET";
-            List<KeyValuePair<string, string>> headers = Utils.GetRequestHeaders(payload);
+            string url = NetworkUtils.GetRequiredString(payload, "url", "아니 요청 보낼 URL은 있어야지;;");
+            string method = NetworkUtils.GetOptionalString(payload, "method") ?? "GET";
+            List<KeyValuePair<string, string>> headers = NetworkUtils.GetRequestHeaders(payload);
             string? contentType = headers
                 .FirstOrDefault(header => header.Key.Equals("Content-Type", StringComparison.OrdinalIgnoreCase))
                 .Value;
@@ -142,11 +143,11 @@ namespace jaeminlang.Mode
 
             if (payload.TryGetValue("body", out object? requestBody) && requestBody != null)
             {
-                string body = Utils.SerializeRequestBody(requestBody, Utils.GetMediaType(contentType));
+                string body = NetworkUtils.SerializeRequestBody(requestBody, NetworkUtils.GetMediaType(contentType));
                 message.Content = new StringContent(body, Encoding.UTF8);
             }
 
-            Utils.ApplyRequestHeaders(message, headers);
+            NetworkUtils.ApplyRequestHeaders(message, headers);
 
             using HttpResponseMessage response = await Client.SendAsync(
                 message,
@@ -169,7 +170,7 @@ namespace jaeminlang.Mode
             if (args.Length < 2 || args.Length > 3 || string.IsNullOrWhiteSpace(args[1]))
                 throw new ArgumentException("안산에는 웹서버 이름과 포트만 줘야지;;");
 
-            string serverName = Utils.ResolveTextToken(args[1]);
+            string serverName = NetworkUtils.ResolveTextToken(args[1]);
             if (string.IsNullOrWhiteSpace(serverName))
                 throw new ArgumentException("웹서버 이름이 비었잖아;;");
 
@@ -177,7 +178,7 @@ namespace jaeminlang.Mode
 
             if (args.Length == 3)
             {
-                double rawPort = Utils.ResolveNumberValue(args[2]);
+                double rawPort = VarUtils.ResolveNumberValue(args[2]);
                 if (!double.IsFinite(rawPort) || rawPort != Math.Truncate(rawPort) || rawPort < 1 || rawPort > 65535)
                     throw new ArgumentException("웹서버 포트가 이상하잖아;;");
 
@@ -192,9 +193,9 @@ namespace jaeminlang.Mode
             if (args.Length != 5)
                 throw new ArgumentException("팝콘에는 웹서버, 메서드, 경로, 함수를 줘야지;;");
 
-            string serverName = Utils.ResolveTextToken(args[1]);
-            string method = Utils.ResolveTextToken(args[2]);
-            string path = Utils.ResolveTextToken(args[3]);
+            string serverName = NetworkUtils.ResolveTextToken(args[1]);
+            string method = NetworkUtils.ResolveTextToken(args[2]);
+            string path = NetworkUtils.ResolveTextToken(args[3]);
             string handlerName = args[4];
 
             if (string.IsNullOrWhiteSpace(serverName))
@@ -221,9 +222,9 @@ namespace jaeminlang.Mode
             if (args.Length != 4)
                 throw new ArgumentException("콜라에는 웹서버, 경로, 파일을 줘야지;;");
 
-            string serverName = Utils.ResolveTextToken(args[1]);
-            string route = Utils.ResolveTextToken(args[2]);
-            string filePath = Utils.ResolveTextToken(args[3]);
+            string serverName = NetworkUtils.ResolveTextToken(args[1]);
+            string route = NetworkUtils.ResolveTextToken(args[2]);
+            string filePath = NetworkUtils.ResolveTextToken(args[3]);
 
             if (string.IsNullOrWhiteSpace(serverName))
                 throw new ArgumentException("웹서버 이름이 비었잖아;;");

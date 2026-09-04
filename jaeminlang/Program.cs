@@ -1,4 +1,5 @@
 using jaeminlang.Mode;
+using jaeminlang.Utils;
 
 namespace jaeminlang
 {
@@ -12,7 +13,7 @@ namespace jaeminlang
             }
             catch (Exception e)
             {
-                Utils.HandleError(e);
+                Global.HandleError(e);
                 return 1;
             }
         }
@@ -47,7 +48,7 @@ namespace jaeminlang
                     }
                     catch (Exception e)
                     {
-                        Utils.HandleError(e);
+                        Global.HandleError(e);
                     }
                 }
             }
@@ -60,14 +61,14 @@ namespace jaeminlang
 
             if (args[0].StartsWith('-'))
             {
-                Utils.HandleError("아니;; 모르는 옵션이잖아;;");
+                Global.HandleError("아니;; 모르는 옵션이잖아;;");
                 return 1;
             }
 
             string jmlFilePath = args[0];
             if (!File.Exists(jmlFilePath))
             {
-                Utils.HandleError("아니;; 파일을 왜 안주냐고;;");
+                Global.HandleError("아니;; 파일을 왜 안주냐고;;");
                 return 1;
             }
 

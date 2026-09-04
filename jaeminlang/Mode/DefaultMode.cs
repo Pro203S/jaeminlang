@@ -1,4 +1,5 @@
 using System.Text;
+using jaeminlang.Utils;
 
 namespace jaeminlang.Mode
 {
@@ -68,8 +69,8 @@ namespace jaeminlang.Mode
             if (args.Length < 2)
                 throw new NullReferenceException("안산에 인수가 없잖아;;");
 
-            object?[] values = Utils.ResolveOutputValues(args[1..], functionExists, invokeFunction);
-            string output = string.Concat(values.Select(Utils.FormatOutputValue));
+            object?[] values = VarUtils.ResolveOutputValues(args[1..], functionExists, invokeFunction);
+            string output = string.Concat(values.Select(FormatUtils.FormatOutputValue));
 
             Stream stdout = Console.OpenStandardOutput();
             stdout.Write(Encoding.UTF8.GetBytes(output));
@@ -96,7 +97,7 @@ namespace jaeminlang.Mode
 
             if (key.StartsWith('{') && key.EndsWith('}'))
             {
-                Utils.SetDictionaryValue(key[1..^1], valueTokens);
+                DictionaryUtils.SetDictionaryValue(key[1..^1], valueTokens);
                 return;
             }
 
@@ -105,13 +106,13 @@ namespace jaeminlang.Mode
 
             if (key.StartsWith('[') && key.EndsWith(']'))
             {
-                Utils.SetArrayValue(key[1..^1], valueTokens);
+                ArrayUtils.SetArrayValue(key[1..^1], valueTokens);
                 return;
             }
 
-            if (Utils.LooksLikeFunctionCall(valueTokens, functionExists))
+            if (VarUtils.LooksLikeFunctionCall(valueTokens, functionExists))
             {
-                object?[] returned = Utils.InvokeFunctionTokens(valueTokens, invokeFunction);
+                object?[] returned = VarUtils.InvokeFunctionTokens(valueTokens, invokeFunction);
                 if (returned.Length != 1)
                     throw new ArgumentException("변수에는 값 하나만 넣어야지;;");
 
@@ -123,20 +124,20 @@ namespace jaeminlang.Mode
                 throw new ArgumentException("변수에 값은 하나만 줘야지;;");
 
             string data = valueTokens[0];
-            if (Utils.IsExpression(data))
+            if (TypeCheck.IsExpression(data))
             {
                 string exp = data[..1];
                 string operand = data[1..];
 
                 if (exp == "+" && Variables.GetValue(key) is string originString)
                 {
-                    object? valueToAppend = Utils.ResolveAssignableValue(operand);
-                    Variables.SetValue(key, originString + Utils.FormatOutputValue(valueToAppend));
+                    object? valueToAppend = VarUtils.ResolveAssignableValue(operand);
+                    Variables.SetValue(key, originString + FormatUtils.FormatOutputValue(valueToAppend));
                     return;
                 }
 
-                double origin = Utils.GetNumberValue(key);
-                double valueToCalc = Utils.ResolveNumberValue(operand);
+                double origin = VarUtils.GetNumberValue(key);
+                double valueToCalc = VarUtils.ResolveNumberValue(operand);
 
                 switch (exp)
                 {
@@ -163,8 +164,8 @@ namespace jaeminlang.Mode
 
             if (key.Contains('.'))
             {
-                object? value = Utils.ResolveSingleValue(valueTokens, functionExists, invokeFunction);
-                Utils.SetCollectionItemValue(key, value);
+                object? value = VarUtils.ResolveSingleValue(valueTokens, functionExists, invokeFunction);
+                CollectionUtils.SetCollectionItemValue(key, value);
                 return;
             }
 
@@ -177,7 +178,7 @@ namespace jaeminlang.Mode
                 return;
             }
 
-            Variables.SetValue(key,Utils. ResolveAssignableValue(data));
+            Variables.SetValue(key, VarUtils.ResolveAssignableValue(data));
         }
 
         public void ExecuteRepeat()
@@ -192,8 +193,8 @@ namespace jaeminlang.Mode
             string rawVal2 = args[2];
             string rawGoTo = args[3];
 
-            double val1 = Utils.ResolveNumberValue(rawVal1);
-            double val2 = Utils.ResolveNumberValue(rawVal2);
+            double val1 = VarUtils.ResolveNumberValue(rawVal1);
+            double val2 = VarUtils.ResolveNumberValue(rawVal2);
 
             if (!int.TryParse(rawGoTo, out int goTo))
                 throw new ArgumentException(rawGoTo + "은(는) 숫자가 아니잖아;;");
@@ -209,7 +210,7 @@ namespace jaeminlang.Mode
             if (args.Length < 2)
                 throw new NullReferenceException("함수 이름은 있어야지;;");
 
-            Utils.InvokeFunctionTokens(args[1..], invokeFunction);
+            VarUtils.InvokeFunctionTokens(args[1..], invokeFunction);
         }
 
         public void ExecuteImport()
@@ -225,7 +226,7 @@ namespace jaeminlang.Mode
 
         public void ExecuteReturn()
         {
-            object?[] values = Utils.ResolveReturnValues(args.Length > 1 ? args[1..] : [], functionExists, invokeFunction);
+            object?[] values = VarUtils.ResolveReturnValues(args.Length > 1 ? args[1..] : [], functionExists, invokeFunction);
             throw new JMLReturnSignal(values);
         }
 
@@ -234,9 +235,9 @@ namespace jaeminlang.Mode
             if (args.Length < 5)
                 throw new NullReferenceException("콜라 인수가 부족하잖아;;");
 
-            double val1 = Utils.ResolveNumberValue(args[1]);
+            double val1 = VarUtils.ResolveNumberValue(args[1]);
             string op = args[2];
-            double val2 = Utils.ResolveNumberValue(args[3]);
+            double val2 = VarUtils.ResolveNumberValue(args[3]);
             string saveTo = args[4];
             string value;
 
@@ -269,7 +270,7 @@ namespace jaeminlang.Mode
             if (args.Length < 3)
                 throw new NullReferenceException("샤갈 인수가 부족하잖아;;");
 
-            double val = Utils.ResolveNumberValue(args[1]);
+            double val = VarUtils.ResolveNumberValue(args[1]);
             string toSave = args[2];
 
             Variables.SetValue(toSave, val == 1 ? 0 : 1);
