@@ -128,37 +128,66 @@ namespace jaeminlang.Mode
             {
                 string exp = data[..1];
                 string operand = data[1..];
+                bool isCollectionItem = key.Contains('.');
 
-                if (exp == "+" && Variables.GetValue(key) is string originString)
+                object? originRaw = isCollectionItem
+                    ? CollectionUtils.ResolveCollectionItemValue(key)
+                    : Variables.GetValue(key);
+
+                if (exp == "+" && originRaw is string originString)
                 {
                     object? valueToAppend = VarUtils.ResolveAssignableValue(operand);
-                    Variables.SetValue(key, originString + FormatUtils.FormatOutputValue(valueToAppend));
+                    string appended = originString + FormatUtils.FormatOutputValue(valueToAppend);
+                    if (isCollectionItem)
+                        CollectionUtils.SetCollectionItemValue(key, appended);
+                    else
+                        Variables.SetValue(key, appended);
+
                     return;
                 }
 
-                double origin = VarUtils.GetNumberValue(key);
+                double origin;
+                if (isCollectionItem)
+                {
+                    if (originRaw == null)
+                        throw new ArgumentNullException(key + "이(가) 정의가 안됐잖아;;");
+
+                    origin = FormatUtils.ConvertToNumber(originRaw, key + "은(는) 숫자가 아니잖아;;");
+                }
+                else
+                {
+                    origin = VarUtils.GetNumberValue(key);
+                }
+
                 double valueToCalc = VarUtils.ResolveNumberValue(operand);
 
+                double result;
                 switch (exp)
                 {
                     case "+":
-                        Variables.SetValue(key, origin + valueToCalc);
+                        result = origin + valueToCalc;
                         break;
                     case "-":
-                        Variables.SetValue(key, origin - valueToCalc);
+                        result = origin - valueToCalc;
                         break;
                     case "*":
-                        Variables.SetValue(key, origin * valueToCalc);
+                        result = origin * valueToCalc;
                         break;
                     case "/":
-                        Variables.SetValue(key, origin / valueToCalc);
+                        result = origin / valueToCalc;
                         break;
                     case "^":
-                        Variables.SetValue(key, Math.Pow(origin, valueToCalc));
+                        result = Math.Pow(origin, valueToCalc);
                         break;
                     default:
                         throw new ArgumentException("이런 수식은 안산에도 없어;;");
                 }
+
+                if (isCollectionItem)
+                    CollectionUtils.SetCollectionItemValue(key, result);
+                else
+                    Variables.SetValue(key, result);
+
                 return;
             }
 
