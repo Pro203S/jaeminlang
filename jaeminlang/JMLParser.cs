@@ -65,7 +65,12 @@ namespace jaeminlang
                     throw new NullReferenceException("함수 이름은 있어야지;;");
 
                 if (Functions.Contains(args[1]))
+                {
+                    int duplicateReturnLine = Parse.FindFunctionReturnLine(_fileContent, i + 1);
+                    _functionBlocks[i] = duplicateReturnLine;
+                    i = duplicateReturnLine;
                     continue;
+                }
 
                 int returnLine = Parse.FindFunctionReturnLine(_fileContent, i + 1);
                 Functions.SetValue(args[1], new Function
