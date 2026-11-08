@@ -101,6 +101,9 @@ namespace jaeminlang
                         line,
                         new Action<int>((goTo) =>
                         {
+                            if (goTo < 1 || goTo > _fileContent.Length)
+                                throw new ArgumentOutOfRangeException(nameof(goTo), $"{goTo}번째 줄로 갈 수는 없잖아;; (1~{_fileContent.Length}번째 줄)");
+
                             i = goTo - 2;
                         }),
                         InvokeFunction,
