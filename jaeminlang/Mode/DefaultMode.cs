@@ -239,24 +239,24 @@ namespace jaeminlang.Mode
             string op = args[2];
             double val2 = VarUtils.ResolveNumberValue(args[3]);
             string saveTo = args[4];
-            string value;
+            double value;
 
             switch (op)
             {
                 case "&":
-                    value = (val1 == 1 && val2 == 1) ? "1" : "0";
+                    value = (val1 == 1 && val2 == 1) ? 1 : 0;
                     break;
                 case "|":
-                    value = (val1 == 1 || val2 == 1) ? "1" : "0";
+                    value = (val1 == 1 || val2 == 1) ? 1 : 0;
                     break;
                 case "=":
-                    value = val1 == val2 ? "1" : "0";
+                    value = val1 == val2 ? 1 : 0;
                     break;
                 case "<":
-                    value = (val1 < val2) ? "1" : "0";
+                    value = (val1 < val2) ? 1 : 0;
                     break;
                 case ">":
-                    value = (val1 > val2) ? "1" : "0";
+                    value = (val1 > val2) ? 1 : 0;
                     break;
                 default:
                     throw new ArgumentException($"어이쿠 {op} 연산자가 뭐야");
@@ -273,7 +273,7 @@ namespace jaeminlang.Mode
             double val = VarUtils.ResolveNumberValue(args[1]);
             string toSave = args[2];
 
-            Variables.SetValue(toSave, val == 1 ? 0 : 1);
+            Variables.SetValue(toSave, val == 1 ? 0.0 : 1.0);
         }
 
         public void ExecuteTerminate()
