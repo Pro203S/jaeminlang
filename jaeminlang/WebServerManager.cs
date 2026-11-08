@@ -1,6 +1,7 @@
 using System.Net;
 using System.Text;
 using System.Text.Json;
+using jaeminlang.Utils;
 
 namespace jaeminlang
 {
@@ -183,7 +184,7 @@ namespace jaeminlang
                 }
                 catch (Exception exception)
                 {
-                    Utils.HandleError(exception, name + " 웹서버");
+                    Global.HandleError(exception, name + " 웹서버");
                 }
             }
         }
@@ -230,7 +231,7 @@ namespace jaeminlang
             }
             catch (Exception exception)
             {
-                Utils.HandleError(exception, name + " 웹서버 요청 처리");
+                Global.HandleError(exception, name + " 웹서버 요청 처리");
                 await TryWriteErrorAsync(context.Response, 500, "Internal Server Error");
             }
             finally
@@ -454,12 +455,12 @@ namespace jaeminlang
                 ["remoteAddress"] = request.RemoteEndPoint?.Address.ToString() ?? ""
             };
 
-            string? mediaType = request.ContentType == null ? null : Utils.GetMediaType(request.ContentType);
-            if (Utils.IsJsonMediaType(mediaType) && Utils.TryParseJson(text, out object? json))
+            string? mediaType = request.ContentType == null ? null : NetworkUtils.GetMediaType(request.ContentType);
+            if (NetworkUtils.IsJsonMediaType(mediaType) && NetworkUtils.TryParseJson(text, out object? json))
                 result["json"] = json;
 
-            if (Utils.IsFormMediaType(mediaType))
-                result["form"] = Utils.ParseForm(text);
+            if (NetworkUtils.IsFormMediaType(mediaType))
+                result["form"] = NetworkUtils.ParseForm(text);
 
             return result;
         }
@@ -472,7 +473,7 @@ namespace jaeminlang
             int status = 200;
             if (responseData.TryGetValue("status", out object? rawStatus) && rawStatus != null)
             {
-                double statusNumber = Utils.ConvertToNumber(rawStatus, "응답 status는 숫자여야 하잖아;;");
+                double statusNumber = FormatUtils.ConvertToNumber(rawStatus, "응답 status는 숫자여야 하잖아;;");
                 if (!double.IsFinite(statusNumber) || statusNumber != Math.Truncate(statusNumber) || statusNumber < 100 || statusNumber > 999)
                     throw new ArgumentException("응답 status가 이상하잖아;;");
 
@@ -489,7 +490,7 @@ namespace jaeminlang
             }
             else if (responseData.TryGetValue("text", out object? text))
             {
-                body = Encoding.UTF8.GetBytes(Utils.FormatOutputValue(text));
+                body = Encoding.UTF8.GetBytes(FormatUtils.FormatOutputValue(text));
             }
             else if (responseData.TryGetValue("body", out object? rawBody))
             {
@@ -528,7 +529,7 @@ namespace jaeminlang
 
             foreach ((string name, object? value) in headers)
             {
-                string headerValue = Utils.FormatOutputValue(value);
+                string headerValue = FormatUtils.FormatOutputValue(value);
                 if (name.Equals("Content-Type", StringComparison.OrdinalIgnoreCase))
                 {
                     response.ContentType = headerValue;
