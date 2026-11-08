@@ -30,7 +30,12 @@ namespace jaeminlang
                     try
                     {
                         string? line = Console.ReadLine();
-                        if (line == null || string.IsNullOrEmpty(line))
+                        if (line == null)
+                        {
+                            return 0;
+                        }
+
+                        if (string.IsNullOrEmpty(line))
                         {
                             Console.WriteLine();
                             continue;
