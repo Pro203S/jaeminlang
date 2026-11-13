@@ -219,6 +219,8 @@ jml 파일을 불러오고 그 jml 파일에 있는 **모든 함수**를 가져�
 |-|-|
 |파일 경로|jml 파일의 경로입니다.|
 
+경로를 입력할 때 백슬래시를 입력해야한다면, `\\`로 작성해야합니다.  
+
 코드 예시:
 ```
 어이쿠 library.jml
@@ -452,17 +454,18 @@ by. [holy0unjinx](https://github.com/holy0unjinx)
 
 ### v1.0.0
 
-- 러스트 점프 줄 번호의 파일 범위를 검증해 잘못된 인덱스 접근과 조용한 종료 수정
-- REPL에서 EOF 입력 시 빈 줄을 무한 출력하던 문제 수정
-- 같은 이름의 함수가 중복 정의되었을 때 뒤쪽 정의의 본문이 최상위 코드로 실행되던 문제 수정 (먼저 정의된 함수 유지)
-- 콜라/샤갈의 결과를 `double`로 통일해 `+` 연산을 숫자 덧셈으로 처리
-- 배열·딕셔너리 요소의 수식 연산과 음수 결과 대입, 함수 반환값 대입 수정
-- `NaN`·`Infinity`를 숫자 리터럴 대신 변수명으로 해석하도록 수정 (대소문자 구분 없이 특수 숫자 파싱 제외)
-- 콜라의 `=` 비교에 절대 오차 `1e-10`을 적용해 부동 소수점 오차로 인한 비교 실패 수정
-- 함수가 호출자의 지역 변수를 참조·수정하던 문제 수정: 자신의 지역 변수와 전역 변수만 접근하며, 기존 전역 변수는 갱신 가능
-- 새 변수의 `+`·`-` 초기화 지원 (`그램,x,-5` → `-5`, `그램,x,+5` → `5`), `*`·`/`·`^` 초기화는 예외 처리 (기존 변수는 가감 연산 유지)
+- 네트워크 모드 삭제
+- 러스트 점프 범위 검증 추가 [Pull Request](https://github.com/Pro203S/jaeminlang/pull/9)
+- REPL의 EOF 무한 출력 수정 [Pull Request](https://github.com/Pro203S/jaeminlang/pull/8)
+- 중복 함수 본문 실행 오류 수정 [Pull Request](https://github.com/Pro203S/jaeminlang/pull/7)
+- 콜라와 샤갈의 결과를 `double`로 통일 [Pull Request](https://github.com/Pro203S/jaeminlang/pull/6)
+- 배열, 딕셔너리 요소의 연산·대입 오류 수정 [Pull Request](https://github.com/Pro203S/jaeminlang/pull/5)
+- `NaN`, `Infinity`를 변수명으로 처리 [Issues](https://github.com/Pro203S/jaeminlang/issues/16)
+- 콜라의 `=` 비교에 epsilon(`1e-10`) 적용 [Issues](https://github.com/Pro203S/jaeminlang/issues/15)
+- 함수 간 지역 스코프 침범 수정 [Issues](https://github.com/Pro203S/jaeminlang/issues/12)
+- 새 변수의 `+`, `-` 초기화 지원 [Issues](https://github.com/Pro203S/jaeminlang/issues/11)
 
-Thanks to @seohuda
+많은 버그를 찾아주신 [@seohuda](https://github.com/seohuda)님의 **Claude**에게 무한한 감사를 드립니다.  
 
 ### v0.8.0
 
