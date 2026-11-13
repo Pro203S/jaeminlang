@@ -1,5 +1,3 @@
-using jaeminlang.Mode;
-
 namespace jaeminlang
 {
     class Program
@@ -19,8 +17,6 @@ namespace jaeminlang
 
         private static int Run(string[] args)
         {
-            ModeManager.Reset();
-
             if (args.Length == 0)
             {
                 Console.WriteLine("jaeminlang by Pro203S (https://github.com/Pro203S/jaeminlang)\n아래에 재민랭을 입력하세요.");
@@ -29,7 +25,10 @@ namespace jaeminlang
                     try
                     {
                         string? line = Console.ReadLine();
-                        if (line == null || string.IsNullOrEmpty(line))
+                        if (line == null)
+                            return 0;
+
+                        if (line.Length == 0)
                         {
                             Console.WriteLine();
                             continue;

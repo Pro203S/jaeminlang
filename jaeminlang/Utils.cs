@@ -1,31 +1,28 @@
 using System.Globalization;
-using System.Net;
 using System.Text;
-using System.Text.Json;
 
 namespace jaeminlang
 {
     public static class Utils
     {
         private static readonly CultureInfo Culture = CultureInfo.InvariantCulture;
+        internal const double NumericEpsilon = 1e-10;
+        private static readonly StreamWriter StandardOutput = new(Console.OpenStandardOutput(), new UTF8Encoding(false), 1024, true) { AutoFlush = true };
+        private static readonly StreamWriter StandardError = new(Console.OpenStandardError(), new UTF8Encoding(false), 1024, true) { AutoFlush = true };
+
+        internal static void WriteOutput(string value)
+        {
+            StandardOutput.Write(value);
+        }
 
         public static void HandleError(string message)
         {
-            Stream stderr = Console.OpenStandardError();
-            stderr.Write(Encoding.UTF8.GetBytes(message + Environment.NewLine));
+            StandardError.WriteLine(message);
         }
 
-        public static void HandleError(Exception exception, string? context = null)
+        public static void HandleError(Exception exception)
         {
-            string message = string.IsNullOrWhiteSpace(context)
-                ? exception.Message
-                : $"{context}: {exception.Message}";
-
-            HandleError(message);
-
-            #if DEBUG
-            Console.WriteLine(exception.StackTrace);
-            #endif
+            HandleError(exception.Message);
         }
 
         #region parse
@@ -33,7 +30,7 @@ namespace jaeminlang
         public static string[] GetArguments(string raw)
         {
             List<string> result = [];
-            List<char> buffer = [];
+            StringBuilder buffer = new(raw.Length);
 
             bool isEscaped = false;
             bool isInsideString = false;
@@ -45,15 +42,15 @@ namespace jaeminlang
                     isEscaped = false;
                     if (c == 'n')
                     {
-                        buffer.Add('\n');
+                        buffer.Append('\n');
                     }
                     else if (c == 'r')
                     {
-                        buffer.Add('\r');
+                        buffer.Append('\r');
                     }
                     else
                     {
-                        buffer.Add(c);
+                        buffer.Append(c);
                     }
                     continue;
                 }
@@ -61,7 +58,7 @@ namespace jaeminlang
                 if (c == '"')
                 {
                     isInsideString = !isInsideString;
-                    buffer.Add(c);
+                    buffer.Append(c);
                     continue;
                 }
 
@@ -73,15 +70,15 @@ namespace jaeminlang
 
                 if (c == ',' && !isInsideString)
                 {
-                    result.Add(new string([.. buffer]));
+                    result.Add(buffer.ToString());
                     buffer.Clear();
                     continue;
                 }
 
-                buffer.Add(c);
+                buffer.Append(c);
             }
 
-            result.Add(new string([.. buffer]));
+            result.Add(buffer.ToString());
 
             return [.. result];
         }
@@ -116,17 +113,32 @@ namespace jaeminlang
             if (str == null)
                 return false;
 
-            return double.TryParse(str, NumberStyles.Float, Culture, out _);
+            return TryParseNumberLiteral(str, out _);
+        }
+
+        private static bool TryParseNumberLiteral(string token, out double number, NumberStyles styles = NumberStyles.Float)
+        {
+            ReadOnlySpan<char> name = token.AsSpan().Trim();
+            if (!name.IsEmpty && name[0] is '+' or '-')
+                name = name[1..];
+
+            if (name.Equals("NaN", StringComparison.OrdinalIgnoreCase) || name.Equals("Infinity", StringComparison.OrdinalIgnoreCase))
+            {
+                number = default;
+                return false;
+            }
+
+            return double.TryParse(token, styles, Culture, out number);
+        }
+
+        internal static bool NumbersEqual(double left, double right)
+        {
+            return left == right || Math.Abs(left - right) <= NumericEpsilon;
         }
 
         public static bool IsExpression(string n)
         {
-            return !string.IsNullOrEmpty(n) &&
-                (n.StartsWith("+") ||
-                n.StartsWith("-") ||
-                n.StartsWith("/") ||
-                n.StartsWith("*") ||
-                n.StartsWith("^"));
+            return !string.IsNullOrEmpty(n) && n[0] is '+' or '-' or '/' or '*' or '^';
         }
 
         public static bool IsStringLiteral(string token)
@@ -156,6 +168,9 @@ namespace jaeminlang
         {
             object? raw = Variables.GetValue(key);
 
+            if (raw is double number)
+                return number;
+
             if (raw == null)
                 throw new ArgumentNullException(key + "이(가) 정의가 안됐잖아;;");
 
@@ -170,16 +185,16 @@ namespace jaeminlang
             if (IsStringLiteral(token))
                 return token[1..^1];
 
-            if (IsNumber(token))
-                return double.Parse(token, Culture);
+            if (TryParseNumberLiteral(token, out double number))
+                return number;
 
             if (token.Contains('.'))
                 return ResolveCollectionItemValue(token);
 
-            if (!Variables.ContainsKey(token))
+            if (!Variables.TryGetValue(token, out object? value))
                 throw new ArgumentNullException(token + "이(가) 정의가 안됐잖아;;");
 
-            return Variables.GetValue(token);
+            return value;
         }
 
         public static string ResolveOutput(string token)
@@ -195,8 +210,8 @@ namespace jaeminlang
             if (IsStringLiteral(token))
                 return token[1..^1];
 
-            if (IsNumber(token))
-                return double.Parse(token, Culture);
+            if (TryParseNumberLiteral(token, out double number))
+                return number;
 
             if (token.Contains('.'))
                 return ResolveCollectionItemValue(token);
@@ -206,8 +221,8 @@ namespace jaeminlang
 
         public static double ResolveNumberValue(string token)
         {
-            if (IsNumber(token))
-                return double.Parse(token, Culture);
+            if (TryParseNumberLiteral(token, out double number))
+                return number;
 
             if (token.Contains('.'))
                 return ConvertToNumber(ResolveCollectionItemValue(token), token + "은(는) 숫자가 아니잖아;;");
@@ -215,10 +230,9 @@ namespace jaeminlang
             return GetNumberValue(token);
         }
 
-        public static object? ResolveSingleValue(
-            string[] tokens,
-            Func<string, bool>? functionExists,
-            Func<string, string[], object?[]>? invokeFunction)
+        public static object? ResolveSingleValue(string[] tokens, Func<string, bool>? functionExists, Func<string, string[], object?[]>? invokeFunction) => ResolveSingleValue(tokens.AsSpan(), functionExists, invokeFunction);
+
+        public static object? ResolveSingleValue(ReadOnlySpan<string> tokens, Func<string, bool>? functionExists, Func<string, string[], object?[]>? invokeFunction)
         {
             if (LooksLikeFunctionCall(tokens, functionExists))
             {
@@ -235,21 +249,22 @@ namespace jaeminlang
             return ResolveAssignableValue(tokens[0]);
         }
 
-        public static object?[] ResolveOutputValues(
-            string[] tokens,
-            Func<string, bool>? functionExists,
-            Func<string, string[], object?[]>? invokeFunction)
+        public static object?[] ResolveOutputValues(string[] tokens, Func<string, bool>? functionExists, Func<string, string[], object?[]>? invokeFunction) => ResolveOutputValues(tokens.AsSpan(), functionExists, invokeFunction);
+
+        public static object?[] ResolveOutputValues(ReadOnlySpan<string> tokens, Func<string, bool>? functionExists, Func<string, string[], object?[]>? invokeFunction)
         {
             if (LooksLikeFunctionCall(tokens, functionExists))
                 return InvokeFunctionTokens(tokens, invokeFunction);
 
-            return tokens.Select(ResolveOptionalValue).ToArray();
+            object?[] values = new object?[tokens.Length];
+            for (int i = 0; i < tokens.Length; i++)
+                values[i] = ResolveOptionalValue(tokens[i]);
+            return values;
         }
 
-        public static object?[] ResolveReturnValues(
-            string[] tokens,
-            Func<string, bool>? functionExists,
-            Func<string, string[], object?[]>? invokeFunction)
+        public static object?[] ResolveReturnValues(string[] tokens, Func<string, bool>? functionExists, Func<string, string[], object?[]>? invokeFunction) => ResolveReturnValues(tokens.AsSpan(), functionExists, invokeFunction);
+
+        public static object?[] ResolveReturnValues(ReadOnlySpan<string> tokens, Func<string, bool>? functionExists, Func<string, string[], object?[]>? invokeFunction)
         {
             if (tokens.Length == 0)
                 return [];
@@ -257,10 +272,18 @@ namespace jaeminlang
             if (LooksLikeFunctionCall(tokens, functionExists))
                 return InvokeFunctionTokens(tokens, invokeFunction);
 
-            return tokens.Select(ResolveAssignableValue).ToArray();
+            object?[] values = new object?[tokens.Length];
+            for (int i = 0; i < tokens.Length; i++)
+                values[i] = ResolveAssignableValue(tokens[i]);
+            return values;
         }
 
         public static bool LooksLikeFunctionCall(string[] tokens, Func<string, bool>? functionExists)
+        {
+            return LooksLikeFunctionCall(tokens.AsSpan(), functionExists);
+        }
+
+        public static bool LooksLikeFunctionCall(ReadOnlySpan<string> tokens, Func<string, bool>? functionExists)
         {
             if (tokens.Length == 0 || functionExists == null)
                 return false;
@@ -271,14 +294,14 @@ namespace jaeminlang
             return tokens.Length > 1 || !Variables.ContainsKey(tokens[0]);
         }
 
-        public static object?[] InvokeFunctionTokens(
-            string[] tokens,
-            Func<string, string[], object?[]>? invokeFunction)
+        public static object?[] InvokeFunctionTokens(string[] tokens, Func<string, string[], object?[]>? invokeFunction) => InvokeFunctionTokens(tokens.AsSpan(), invokeFunction);
+
+        public static object?[] InvokeFunctionTokens(ReadOnlySpan<string> tokens, Func<string, string[], object?[]>? invokeFunction)
         {
             if (invokeFunction == null)
                 throw new InvalidOperationException("함수를 실행할 수가 없잖아;;");
 
-            return invokeFunction(tokens[0], tokens.Skip(1).ToArray());
+            return invokeFunction(tokens[0], tokens[1..].ToArray());
         }
 
         #endregion
@@ -293,10 +316,17 @@ namespace jaeminlang
 
         public static void SetArrayValue(string key, string[] rawValues)
         {
+            SetArrayValue(key, rawValues.AsSpan());
+        }
+
+        public static void SetArrayValue(string key, ReadOnlySpan<string> rawValues)
+        {
             if (string.IsNullOrWhiteSpace(key))
                 throw new ArgumentException("배열 이름이 비었잖아;;");
 
-            object?[] values = rawValues.Select(ResolveAssignableValue).ToArray();
+            object?[] values = new object?[rawValues.Length];
+            for (int i = 0; i < rawValues.Length; i++)
+                values[i] = ResolveAssignableValue(rawValues[i]);
             Variables.SetValue(key, values);
         }
 
@@ -377,13 +407,18 @@ namespace jaeminlang
 
         public static void SetDictionaryValue(string key, string[] rawEntries)
         {
+            SetDictionaryValue(key, rawEntries.AsSpan());
+        }
+
+        public static void SetDictionaryValue(string key, ReadOnlySpan<string> rawEntries)
+        {
             if (string.IsNullOrWhiteSpace(key))
                 throw new ArgumentException("딕셔너리 이름이 비었잖아;;");
 
             if (rawEntries.Length % 2 != 0)
                 throw new ArgumentException("딕셔너리는 키와 값을 짝으로 줘야지;;");
 
-            Dictionary<string, object?> dictionary = [];
+            Dictionary<string, object?> dictionary = new(rawEntries.Length / 2);
             for (int i = 0; i < rawEntries.Length; i += 2)
             {
                 string dictionaryKey = ResolveDictionaryKey(rawEntries[i]);
@@ -456,11 +491,18 @@ namespace jaeminlang
 
         public static double ConvertToNumber(object? value, string message)
         {
+            if (value is double number)
+                return number;
+
             if (value == null)
                 throw new InvalidCastException(message);
 
-            if (value is string s && double.TryParse(s, NumberStyles.Float, Culture, out double parsed))
-                return parsed;
+            if (value is string s)
+            {
+                if (TryParseNumberLiteral(s, out double parsed, NumberStyles.Float | NumberStyles.AllowThousands))
+                    return parsed;
+                throw new InvalidCastException(message);
+            }
 
             if (value is IConvertible convertible)
             {
@@ -478,214 +520,22 @@ namespace jaeminlang
 
         #endregion
 
-        #region 네트워크
-
-        public static string GetRequiredString(
-            IReadOnlyDictionary<string, object?> dictionary,
-            string key,
-            string errorMessage)
-        {
-            string? value = GetOptionalString(dictionary, key);
-            if (string.IsNullOrWhiteSpace(value))
-                throw new ArgumentException(errorMessage);
-
-            return value;
-        }
-
-        public static string? GetOptionalString(
-            IReadOnlyDictionary<string, object?> dictionary,
-            string key)
-        {
-            if (!dictionary.TryGetValue(key, out object? value) || value == null)
-                return null;
-
-            return value as string
-                ?? throw new InvalidCastException(key + " 값은 문자열이어야 하잖아;;");
-        }
-
-        public static string ResolveTextToken(string token)
-        {
-            if (IsStringLiteral(token))
-                return token[1..^1];
-
-            if (!Variables.TryGetValue(token, out object? value))
-                return token;
-
-            return value as string
-                ?? throw new InvalidCastException(token + " 값은 문자열이어야 하잖아;;");
-        }
-
-        public static List<KeyValuePair<string, string>> GetRequestHeaders(
-            IReadOnlyDictionary<string, object?> payload)
-        {
-            if (!payload.TryGetValue("headers", out object? rawHeaders) || rawHeaders == null)
-                return [];
-
-            if (rawHeaders is Dictionary<string, object?> headerDictionary)
-            {
-                return headerDictionary.Select(header => new KeyValuePair<string, string>(
-                    header.Key,
-                    FormatOutputValue(header.Value))).ToList();
-            }
-
-            if (rawHeaders is not string headerText)
-                throw new InvalidCastException("headers 값은 문자열이나 딕셔너리여야 하잖아;;");
-
-            List<KeyValuePair<string, string>> headers = [];
-            foreach (string line in headerText.Replace("\r\n", "\n").Split('\n'))
-            {
-                if (string.IsNullOrWhiteSpace(line))
-                    continue;
-
-                int separator = line.IndexOf(':');
-                if (separator <= 0)
-                    throw new FormatException(line + " 헤더 형식이 이상하잖아;;");
-
-                string name = line[..separator].Trim();
-                string value = line[(separator + 1)..].Trim();
-                if (name.Length == 0)
-                    throw new FormatException("헤더 이름이 비었잖아;;");
-
-                headers.Add(new KeyValuePair<string, string>(name, value));
-            }
-
-            return headers;
-        }
-
-        public static void ApplyRequestHeaders(
-            HttpRequestMessage message,
-            IEnumerable<KeyValuePair<string, string>> headers)
-        {
-            foreach ((string name, string value) in headers)
-            {
-                if (message.Headers.TryAddWithoutValidation(name, value))
-                    continue;
-
-                message.Content ??= new ByteArrayContent([]);
-                message.Content.Headers.Remove(name);
-                if (!message.Content.Headers.TryAddWithoutValidation(name, value))
-                    throw new FormatException(name + " 헤더를 요청에 넣을 수가 없잖아;;");
-            }
-        }
-
-        public static string SerializeRequestBody(object body, string? mediaType)
-        {
-            if (body is string text)
-                return text;
-
-            if (IsFormMediaType(mediaType) && body is Dictionary<string, object?> form)
-            {
-                return string.Join("&", form.Select(field =>
-                    $"{WebUtility.UrlEncode(field.Key)}={WebUtility.UrlEncode(FormatOutputValue(field.Value))}"));
-            }
-
-            return JsonSerializer.Serialize(body);
-        }
-
-        public static Dictionary<string, object?> GetResponseHeaders(HttpResponseMessage response)
-        {
-            Dictionary<string, object?> headers = new(StringComparer.OrdinalIgnoreCase);
-
-            foreach ((string name, IEnumerable<string> values) in response.Headers)
-                headers[name] = string.Join(", ", values);
-
-            foreach ((string name, IEnumerable<string> values) in response.Content.Headers)
-                headers[name] = string.Join(", ", values);
-
-            return headers;
-        }
-
-        public static bool TryParseJson(string text, out object? value)
-        {
-            try
-            {
-                using JsonDocument document = JsonDocument.Parse(text);
-                value = ConvertJsonValue(document.RootElement);
-                return true;
-            }
-            catch (JsonException)
-            {
-                value = null;
-                return false;
-            }
-        }
-
-        public static Dictionary<string, object?> ParseForm(string text)
-        {
-            Dictionary<string, object?> form = [];
-            if (string.IsNullOrEmpty(text))
-                return form;
-
-            foreach (string field in text.Split('&'))
-            {
-                int separator = field.IndexOf('=');
-                string name = separator < 0 ? field : field[..separator];
-                string value = separator < 0 ? "" : field[(separator + 1)..];
-                form[WebUtility.UrlDecode(name)] = WebUtility.UrlDecode(value);
-            }
-
-            return form;
-        }
-
-        public static string? GetMediaType(string? contentType)
-        {
-            if (string.IsNullOrWhiteSpace(contentType))
-                return null;
-
-            return contentType.Split(';', 2)[0].Trim();
-        }
-
-        public static bool IsJsonMediaType(string? mediaType)
-        {
-            return mediaType != null &&
-                (mediaType.Equals("application/json", StringComparison.OrdinalIgnoreCase) ||
-                 mediaType.Equals("text/json", StringComparison.OrdinalIgnoreCase) ||
-                 mediaType.EndsWith("+json", StringComparison.OrdinalIgnoreCase));
-        }
-
-        public static bool IsFormMediaType(string? mediaType)
-        {
-            return mediaType != null &&
-                mediaType.Equals("application/x-www-form-urlencoded", StringComparison.OrdinalIgnoreCase);
-        }
-
-        #endregion
-
         #region 스코프
 
-        public static Dictionary<string, object?>? FindScope(
-            IReadOnlyList<Dictionary<string, object?>> scopes,
-            string key)
+        public static Dictionary<string, object?>? FindScope(IReadOnlyList<Dictionary<string, object?>> scopes, string key)
         {
-            for (int i = scopes.Count - 1; i >= 0; i--)
-            {
-                if (scopes[i].ContainsKey(key))
-                    return scopes[i];
-            }
+            if (scopes.Count == 0)
+                return null;
 
-            return null;
+            if (scopes[^1].ContainsKey(key))
+                return scopes[^1];
+
+            return scopes.Count > 1 && scopes[0].ContainsKey(key) ? scopes[0] : null;
         }
 
         #endregion
 
         #region 내부 모듈
-
-        private static object? ConvertJsonValue(JsonElement element)
-        {
-            return element.ValueKind switch
-            {
-                JsonValueKind.Object => element.EnumerateObject().ToDictionary(
-                    property => property.Name,
-                    property => ConvertJsonValue(property.Value)),
-                JsonValueKind.Array => element.EnumerateArray().Select(ConvertJsonValue).ToArray(),
-                JsonValueKind.Number => element.GetDouble(),
-                JsonValueKind.True => true,
-                JsonValueKind.False => false,
-                JsonValueKind.String => element.GetString(),
-                JsonValueKind.Null or JsonValueKind.Undefined => null,
-                _ => element.GetRawText()
-            };
-        }
 
         private static object?[] GetArrayValue(object? raw, string message)
         {

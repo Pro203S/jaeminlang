@@ -1,5 +1,3 @@
-using jaeminlang.Mode;
-
 namespace jaeminlang
 {
     public sealed class Function
@@ -8,7 +6,6 @@ namespace jaeminlang
         public required int bodyStart;
         public required int returnLine;
         public required string[] parameters;
-        public required ExecutionMode? executionMode;
     }
 
     public static class Functions
@@ -18,6 +15,7 @@ namespace jaeminlang
         public static void Reset()
         {
             functions.Clear();
+            functions.TrimExcess();
         }
 
         public static bool Contains(string key)

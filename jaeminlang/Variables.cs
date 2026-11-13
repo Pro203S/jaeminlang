@@ -12,6 +12,7 @@ namespace jaeminlang
         public static void Reset()
         {
             scopes.Clear();
+            scopes.TrimExcess();
             scopes.Add([]);
         }
 
@@ -51,11 +52,11 @@ namespace jaeminlang
 
         public static bool TryGetValue(string key, out object? value)
         {
-            for (int i = scopes.Count - 1; i >= 0; i--)
-            {
-                if (scopes[i].TryGetValue(key, out value))
-                    return true;
-            }
+            if (scopes[^1].TryGetValue(key, out value))
+                return true;
+
+            if (scopes.Count > 1 && scopes[0].TryGetValue(key, out value))
+                return true;
 
             value = null;
             return false;

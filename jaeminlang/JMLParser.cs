@@ -1,31 +1,38 @@
-using jaeminlang.Mode;
 using static jaeminlang.Utils;
 
 namespace jaeminlang
 {
     public class JMLParser
     {
-        private static readonly HashSet<string> RegisteredFiles = new(
-            OperatingSystem.IsWindows() ? StringComparer.OrdinalIgnoreCase : StringComparer.Ordinal);
+        private static readonly HashSet<string> RegisteredFiles = new(OperatingSystem.IsWindows() ? StringComparer.OrdinalIgnoreCase : StringComparer.Ordinal);
 
         private readonly string _filepath;
-        private string[] _fileContent = [];
+        private readonly string[][] _commands;
         private readonly Dictionary<int, int> _functionBlocks = [];
 
         public JMLParser(string filepath)
         {
             _filepath = Path.GetFullPath(filepath);
-            _fileContent = File.ReadAllLines(_filepath);
+            _commands = File.ReadLines(_filepath).Select(line => ShouldSkipLine(line) ? [] : GetArguments(line)).ToArray();
         }
 
         public void Run()
         {
-            ModeManager.Reset();
             Variables.Reset();
             Functions.Reset();
             RegisteredFiles.Clear();
-            RegisterFunctions();
-            RunRange(0, _fileContent.Length, false);
+            try
+            {
+                RegisterFunctions();
+                RunRange(0, _commands.Length, false);
+            }
+            finally
+            {
+                Variables.Reset();
+                Functions.Reset();
+                RegisteredFiles.Clear();
+                RegisteredFiles.TrimExcess();
+            }
         }
 
         public void RegisterFunctions()
@@ -34,61 +41,60 @@ namespace jaeminlang
                 return;
 
             _functionBlocks.Clear();
-            ExecutionMode? declaredMode = ExecutionMode.Default;
 
-            for (int i = 0; i < _fileContent.Length; i++)
+            for (int i = 0; i < _commands.Length; i++)
             {
-                string line = _fileContent[i];
-                if (ShouldSkipLine(line))
-                    continue;
-
-                string[] args = GetArguments(line);
+                string[] args = _commands[i];
                 if (args.Length == 0)
                     continue;
 
-                if (args[0] == "메가커피")
-                {
-                    declaredMode = ModeManager.GetDeclaredMode(args);
-                    continue;
-                }
-
-                if (args[0] == "팝콘" && declaredMode != ExecutionMode.Network)
+                if (args[0] == "팝콘")
                 {
                     ImportLibrary(args.Length > 1 ? args[1] : throw new NullReferenceException("파일 경로는 있어야지;;"));
                     continue;
                 }
 
-                if (args[0] != "엘릭서" || declaredMode == ExecutionMode.Network)
+                if (args[0] != "엘릭서")
                     continue;
 
                 if (args.Length < 2)
                     throw new NullReferenceException("함수 이름은 있어야지;;");
 
-                if (Functions.Contains(args[1]))
-                    continue;
-
-                int returnLine = FindFunctionReturnLine(_fileContent, i + 1);
-                Functions.SetValue(args[1], new Function
+                bool alreadyDefined = Functions.Contains(args[1]);
+                int returnLine = i + 1;
+                while (returnLine < _commands.Length && (_commands[returnLine].Length == 0 || _commands[returnLine][0] != "음..."))
+                    returnLine++;
+                if (returnLine == _commands.Length)
                 {
-                    owner = this,
-                    bodyStart = i + 1,
-                    returnLine = returnLine,
-                    parameters = args.Skip(2).ToArray(),
-                    executionMode = declaredMode
-                });
+                    if (alreadyDefined)
+                        continue;
+                    throw new ArgumentException("함수 끝에 음... 이 없잖아;;");
+                }
+                if (!alreadyDefined)
+                {
+                    Functions.SetValue(args[1], new Function
+                    {
+                        owner = this,
+                        bodyStart = i + 1,
+                        returnLine = returnLine,
+                        parameters = args[2..]
+                    });
+                }
                 _functionBlocks[i] = returnLine;
                 i = returnLine;
             }
         }
 
-        private void RunRange(int startIndex, int endIndex, bool allowReturn)
+        private object?[] RunRange(int startIndex, int endIndex, bool allowReturn)
         {
-            for (int i = startIndex; i < endIndex; i++)
+            int i = startIndex;
+            JMLExecutor executor = new([], goTo => { if (goTo < 1 || goTo > _commands.Length) throw new ArgumentException("러스트 줄 번호가 파일 범위를 벗어났잖아;;"); i = goTo - 2; }, InvokeFunction, Functions.Contains, ImportLibrary);
+            for (; i < endIndex; i++)
             {
                 try
                 {
-                    string line = _fileContent[i];
-                    if (ShouldSkipLine(line))
+                    string[] args = _commands[i];
+                    if (args.Length == 0)
                         continue;
 
                     if (_functionBlocks.TryGetValue(i, out int functionEnd))
@@ -97,17 +103,11 @@ namespace jaeminlang
                         continue;
                     }
 
-                    JMLCommand cmd = new(
-                        line,
-                        new Action<int>((goTo) =>
-                        {
-                            i = goTo - 2;
-                        }),
-                        InvokeFunction,
-                        Functions.Contains,
-                        ImportLibrary,
-                        InvokeFunctionValues);
-                    cmd.Execute();
+                    if (allowReturn && args[0] == "음...")
+                        return ResolveReturnValues(args.AsSpan(1), Functions.Contains, InvokeFunction);
+
+                    if (!executor.Execute(args))
+                        throw new ArgumentException("아니 " + args[0] + "은(는) 안산에도 없는 명령언데;;");
                 }
                 catch (JMLReturnSignal) when (allowReturn)
                 {
@@ -117,16 +117,17 @@ namespace jaeminlang
                 {
                     throw new InvalidOperationException("여기서 음... 쓰면 어떡해;;");
                 }
-                catch (Exception e) when (allowReturn)
-                {
-                    throw new InvalidOperationException($"[{_filepath}] {i + 1}번째 줄: {e.Message}", e);
-                }
                 catch (Exception e)
                 {
-                    HandleError(e, $"[{_filepath}] {i + 1}번째 줄");
+                    if (allowReturn)
+                        throw;
+
+                    HandleError(e);
                     Environment.Exit(1);
                 }
             }
+
+            return [];
         }
 
         private object?[] InvokeFunction(string name, string[] rawArgs)
@@ -135,55 +136,36 @@ namespace jaeminlang
             return function.owner.InvokeRegisteredFunction(name, function, rawArgs);
         }
 
-        private object?[] InvokeFunctionValues(string name, object?[] args)
-        {
-            Function function = Functions.GetRequired(name);
-            return function.owner.InvokeRegisteredFunctionValues(name, function, args);
-        }
-
         private object?[] InvokeRegisteredFunction(string name, Function function, string[] rawArgs)
         {
             if (function.parameters.Length != rawArgs.Length)
                 throw new ArgumentException(name + " 함수 인수 개수가 안맞잖아;;");
 
-            object?[] resolvedArgs = rawArgs.Select(Utils.ResolveAssignableValue).ToArray();
-            return InvokeRegisteredFunctionValues(name, function, resolvedArgs);
-        }
-
-        private object?[] InvokeRegisteredFunctionValues(string name, Function function, object?[] resolvedArgs)
-        {
-            if (function.parameters.Length != resolvedArgs.Length)
-                throw new ArgumentException(name + " 함수 인수 개수가 안맞잖아;;");
-
-            ExecutionMode functionMode = function.executionMode ?? ModeManager.Current;
-
-            using (ModeManager.EnterMode(functionMode))
+            object?[] resolvedArgs = new object?[rawArgs.Length];
+            for (int i = 0; i < rawArgs.Length; i++)
+                resolvedArgs[i] = ResolveAssignableValue(rawArgs[i]);
+            Variables.PushScope();
+            try
             {
-                Variables.PushScope();
-                try
+                for (int i = 0; i < function.parameters.Length; i++)
                 {
-                    for (int i = 0; i < function.parameters.Length; i++)
-                    {
-                        Variables.SetLocalValue(function.parameters[i], resolvedArgs[i]);
-                    }
+                    Variables.SetLocalValue(function.parameters[i], resolvedArgs[i]);
+                }
 
-                    RunRange(function.bodyStart, function.returnLine + 1, true);
-                    return [];
-                }
-                catch (JMLReturnSignal signal)
-                {
-                    return signal.Values;
-                }
-                finally
-                {
-                    Variables.PopScope();
-                }
+                return RunRange(function.bodyStart, function.returnLine + 1, true);
+            }
+            finally
+            {
+                Variables.PopScope();
             }
         }
 
         private void ImportLibrary(string rawPath)
         {
             string filePath = ResolveImportPath(rawPath);
+
+            if (RegisteredFiles.Contains(filePath))
+                return;
 
             if (!File.Exists(filePath))
                 throw new NullReferenceException("아니 없는 파일이잖아;;");
