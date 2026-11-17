@@ -25,7 +25,10 @@ namespace jaeminlang
                     ExecuteOutput();
                     return true;
                 case "재민":
-                    ExecuteInput();
+                    ExecuteInputNumber();
+                    return true;
+                case "엄":
+                    ExecuteInputString();
                     return true;
                 case "그램":
                     ExecuteVariable();
@@ -72,7 +75,18 @@ namespace jaeminlang
             Utils.WriteOutput(output);
         }
 
-        public void ExecuteInput()
+        public void ExecuteInputNumber()
+        {
+            if (args.Length < 2)
+                throw new NullReferenceException("재민에 인수가 없잖아;;");
+
+            string key = args[1];
+            double data = Convert.ToInt64(Console.ReadLine());
+
+            Variables.SetValue(key, data);
+        }
+
+        public void ExecuteInputString()
         {
             if (args.Length < 2)
                 throw new NullReferenceException("재민에 인수가 없잖아;;");
@@ -80,7 +94,7 @@ namespace jaeminlang
             string key = args[1];
             string? data = Console.ReadLine();
 
-            Variables.SetValue(key, data ?? "");
+            Variables.SetValue(key, data);
         }
 
         public void ExecuteVariable()
